@@ -84,8 +84,13 @@ jobs:
             --notes "Android app built from ${{ github.ref_name }} @ ${{ github.sha }}. Install LearnHarness.apk on the phone, then follow docs/android.md to connect it to the phone server on your computer."
 
   smoke:
-    name: Emulator smoke test
+    name: Emulator smoke test (API ${{ matrix.api }})
     needs: apk
+    strategy:
+      fail-fast: false
+      matrix:
+        # 30 = Android 11, 34 = Android 14, 35 = Android 15 (edge-to-edge enforced).
+        api: [30, 34, 35]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -123,7 +128,7 @@ jobs:
         run: npm ci && npm install --no-save playwright-core@1.63.0
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ matrix.api }}
           arch: x86_64
           target: google_apis
           disable-animations: true
@@ -132,8 +137,18 @@ jobs:
       - name: Phone server log
         if: always()
         run: tail -50 "$RUNNER_TEMP/phone.log" || true
+      - name: Screenshots in the log (small JPEGs, base64)
+        if: always()
+        run: |
+          for f in mobile/smoke-shots/*.png; do
+            [ -f "$f" ] || continue
+            echo "LH-SHOT-BEGIN $(basename "$f")"
+            convert "$f" -resize 320x -quality 55 jpg:- | base64 -w0
+            echo
+            echo "LH-SHOT-END"
+          done
       - uses: actions/upload-artifact@v5
         if: always()
         with:
-          name: smoke-screenshots
+          name: smoke-screenshots-api${{ matrix.api }}
           path: mobile/smoke-shots

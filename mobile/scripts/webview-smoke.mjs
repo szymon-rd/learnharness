@@ -172,6 +172,38 @@ try {
 	check(home.scrollWidth <= home.width, "no horizontal scroll on home", `${home.scrollWidth} vs ${home.width}`);
 	await shot("02-home");
 
+	// Soft keyboard: tapping the composer must keep it visible above the
+	// keyboard (the viewport resizes; nothing hides behind the IME).
+	try {
+		const p = await live();
+		await p.tap("textarea");
+		await sleep(2500);
+		const kb = await p.evaluate(() => {
+			const r = document.querySelector("textarea").getBoundingClientRect();
+			const vv = window.visualViewport;
+			return { bottom: Math.round(r.bottom), visible: Math.round(vv ? vv.height + vv.offsetTop : innerHeight), inner: innerHeight };
+		});
+		const ime = (await device.shell("dumpsys input_method | grep -m1 mInputShown")).toString().trim();
+		console.log(`  (keyboard: ${ime}; composer bottom ${kb.bottom}, visible height ${kb.visible}, innerHeight ${kb.inner})`);
+		check(kb.bottom <= kb.visible + 1, "composer stays above the soft keyboard", `${kb.bottom} vs ${kb.visible}`);
+		await shot("02b-keyboard");
+		await p.evaluate(() => document.activeElement?.blur());
+		await sleep(1000);
+		// Sidebar drawer over the page, then closed by its backdrop.
+		await p.tap('[aria-label="Open sidebar"]');
+		await sleep(1200);
+		const drawer = await p.evaluate(() => {
+			const backdrop = document.querySelector('[data-testid="sidebar-backdrop"]');
+			return { backdrop: !!backdrop, overflow: document.documentElement.scrollWidth > innerWidth };
+		});
+		check(drawer.backdrop && !drawer.overflow, "sidebar opens as a drawer over the page");
+		await shot("02c-sidebar");
+		await p.evaluate(() => document.querySelector('[data-testid="sidebar-backdrop"]')?.click());
+		await sleep(800);
+	} catch (err) {
+		check(false, "keyboard and sidebar checks ran", String(err?.message).split("\n")[0]);
+	}
+
 	// 3. Sessions load over the network (API behind the pairing cookie).
 	step("3. Sessions load over the network (API behind the pairing cookie).");
 	await (await live()).evaluate((id) => {
