@@ -23,6 +23,18 @@ const PRACTICE = "chat_mv293wv5_10656952";
 fs.mkdirSync(shots, { recursive: true });
 
 let failures = 0;
+let currentStep = "start";
+const stepStarted = Date.now();
+function step(name) {
+	currentStep = name;
+	console.log(`\n== ${name} (t+${Math.round((Date.now() - stepStarted) / 1000)}s)`);
+}
+// Watchdog: a hung DevTools call must fail the job, not stall it for the
+// whole job timeout.
+setTimeout(() => {
+	console.log(`FAIL: smoke test timed out during "${currentStep}"`);
+	process.exit(1);
+}, 7 * 60_000).unref();
 function check(ok, label, detail = "") {
 	console.log(`${ok ? "PASS" : "FAIL"}: ${label}${detail ? ` — ${detail}` : ""}`);
 	if (!ok) failures++;
@@ -52,7 +64,7 @@ async function launch() {
 /** The app's current WebView page. Re-attaches when Android replaced the
  * DevTools target (e.g. the activity was recreated). */
 async function attach() {
-	const webview = await device.webView({ pkg: PKG }, { timeout: 60_000 });
+	const webview = await device.webView({ pkg: PKG }, { timeout: 20_000 });
 	let page = await webview.page();
 	if (page.isClosed()) {
 		// Same app process, new renderer: pick up the replacement target.
@@ -124,12 +136,14 @@ async function waitForUrl(_unused, predicate, timeout = 30_000) {
 let page;
 try {
 	// 1. First launch: the connect screen.
+	step("1. First launch: the connect screen.");
 	page = await launch();
 	await (await live()).waitForSelector("#form", { state: "visible", timeout: 30_000 });
 	check((await currentUrl()).startsWith("https://localhost/"), "first launch shows the local connect screen", await currentUrl());
 	await shot("01-connect");
 
 	// 2. Validation, then connect + pair.
+	step("2. Validation, then connect + pair.");
 	await sleep(3000); // let the first load settle
 	await withPage("fill form", async (p) => {
 		await p.waitForSelector("#form", { state: "visible", timeout: 30_000 });
@@ -154,6 +168,7 @@ try {
 	await shot("02-home");
 
 	// 3. Sessions load over the network (API behind the pairing cookie).
+	step("3. Sessions load over the network (API behind the pairing cookie).");
 	await (await live()).evaluate((id) => {
 		location.href = `/chat/${id}`;
 	}, TEACH);
@@ -175,6 +190,7 @@ try {
 	await shot("04-practice");
 
 	// 4. Outside links open outside the app (the WebView stays put).
+	step("4. Outside links open outside the app (the WebView stays put).");
 	const before = await currentUrl();
 	await (await live()).evaluate(() => {
 		location.href = "https://example.com/";
@@ -185,6 +201,7 @@ try {
 	await sleep(1500);
 
 	// 5. Android back walks the history: practice → teach → home → connect screen.
+	step("5. Android back walks the history: practice → teach → home → connect screen.");
 	await device.shell("input keyevent 4");
 	await sleep(2000);
 	check((await currentUrl()).endsWith(`/chat/${TEACH}`), "back: practice → teaching session", await currentUrl());
@@ -200,12 +217,14 @@ try {
 	await shot("05-back-to-connect");
 
 	// 6. Cold restart: reconnects straight to the server.
+	step("6. Cold restart: reconnects straight to the server.");
 	page = await launch();
 	url = await waitForUrl(page, (u) => u === `${SERVER}/`);
 	check(url === `${SERVER}/`, "cold restart reconnects to the saved server", url);
 	await shot("06-restart");
 
 	// 7. Unreachable server → the app's error page, with a way back.
+	step("7. Unreachable server → the app's error page, with a way back.");
 	// Fresh app data, so the connect form opens directly.
 	await device.shell(`am force-stop ${PKG}`);
 	await device.shell(`pm clear ${PKG}`);
