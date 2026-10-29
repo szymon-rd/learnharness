@@ -317,6 +317,39 @@ try {
 	check(url === `${SERVER}/`, oldWebView() ? "cold restart keeps the saved server (Connect without retyping)" : "cold restart reconnects to the saved server", url);
 	await shot("06-restart");
 
+	// 6b. The page's renderer process dies (Android reclaims memory, or a
+	// crash): the app must stay open and come back, not close.
+	step("6b. Renderer crash: the app recovers instead of closing.");
+	let crashAt = 0;
+	try {
+		const p = await live();
+		const cdp = await p.context().newCDPSession(p);
+		crashAt = Date.now();
+		await cdp.send("Page.crash").catch(() => {});
+	} catch (err) {
+		console.log(`  (could not crash the renderer: ${String(err?.message).split("\n")[0]})`);
+	}
+	if (!crashAt) {
+		record("SKIP: renderer crash recovery — DevTools could not crash the renderer");
+	} else {
+		await sleep(4000);
+		const topAfterCrash = (await adbShell("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3")).toString().trim();
+		check(topAfterCrash.includes(PKG), "renderer crash: the app stays open", topAfterCrash.split("\n")[0]);
+		page = null;
+		url = await waitForUrl(null, (u) => u === `${SERVER}/` || u.startsWith("https://localhost/"), 30_000);
+		if (url.startsWith("https://localhost/")) {
+			// The connect screen came back; it may already be on its way to the server.
+			url = await waitForUrl(null, (u) => u === `${SERVER}/`, 10_000);
+		}
+		if (url !== `${SERVER}/` && url.startsWith("https://localhost/")) {
+			const saved = await (await live()).inputValue("#url").catch(() => "");
+			check(saved === SERVER, "renderer crash: the connect screen comes back with the saved server", url);
+		} else {
+			check(url === `${SERVER}/`, "renderer crash: the app reconnects to the server", url);
+		}
+		await shot("06b-after-crash");
+	}
+
 	// 7. Unreachable server → the app's error page, with a way back.
 	step("7. Unreachable server → the app's error page, with a way back.");
 	// Fresh app data, so the connect form opens directly.
@@ -325,6 +358,7 @@ try {
 	page = await launch();
 	await sleep(2000);
 	const deadServer = SERVER.replace(/:(\d+)$/, ":3999");
+	const deadSubmitAt = Date.now();
 	await withPage("open the connect form", async (p) => {
 		await p.waitForSelector("#form", { state: "visible", timeout: 15_000 });
 		await p.fill("#url", deadServer);
@@ -332,7 +366,9 @@ try {
 		await p.click("button[type=submit]");
 	});
 	url = await waitForUrl(page, (u) => u.includes("error.html"), 20_000);
-	check(url.includes("error.html"), "unreachable server shows the error page", url);
+	// DevTools can lose the page right after it lands; the navigation log counts too.
+	const sawErrorPage = navigations.some((n) => n.at >= deadSubmitAt && n.url.includes("error.html"));
+	check(url.includes("error.html") || sawErrorPage, "unreachable server shows the error page", url.includes("error.html") ? url : `navigation log: ${sawErrorPage ? "error.html" : "none"}`);
 	await shot("07-error");
 	await withPage("change server", async (p) => {
 		await p.click("#change");
