@@ -51,6 +51,12 @@ jobs:
           COOKIE=$(echo "$HEADERS" | grep -i set-cookie | sed 's/.*lh_remote=\([^;]*\).*/\1/' | tr -d '\r')
           test "$(curl -sk -o /dev/null -w '%{http_code}' -b "lh_remote=$COOKIE" https://localhost/)" = 200
           test "$(curl -sk -o /dev/null -w '%{http_code}' -b "lh_remote=$COOKIE" https://localhost/api/graph/status)" = 200
+          # API JSON is compressed by Caddy (the graph data is large) …
+          curl -sk -D - -o /dev/null -H "Accept-Encoding: gzip" -b "lh_remote=$COOKIE" https://localhost/api/graph | grep -i "content-encoding: gzip"
+          # … but the event stream is not (compression would hold back tokens).
+          if timeout 3 curl -sk -N -D - -o /dev/null -H "Accept-Encoding: gzip" -b "lh_remote=$COOKIE" https://localhost/api/events | grep -qi "content-encoding"; then
+            echo "::error::the event stream is compressed"; exit 1
+          fi
           # The events stream sends a keep-alive every 25 s; it must arrive through Caddy.
           timeout 35 curl -sk -N -b "lh_remote=$COOKIE" https://localhost/api/events > events.txt || true
           grep -q ": ping" events.txt
