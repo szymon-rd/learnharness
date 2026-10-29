@@ -61,17 +61,28 @@ async function attach() {
 	return page;
 }
 
-/** Run a page action; if the target went away, re-attach once and retry. */
-async function withPage(label, fn) {
-	try {
-		return await fn(page);
-	} catch (err) {
-		if (!/closed|detached|Target/i.test(String(err?.message))) throw err;
-		console.log(`  (re-attaching after "${String(err.message).split("\n")[0]}" during ${label})`);
-		const views = await device.webViews();
-		console.log(`  (webviews: ${views.map((v) => `${v.pkg()}#${v.pid()}`).join(", ") || "none"})`);
+/** The live page: Android swaps the WebView renderer (and its DevTools
+ * target) on cross-origin navigations such as server ↔ connect screen. */
+async function live() {
+	if (!page || page.isClosed()) {
+		await sleep(500);
 		page = await attach();
-		return fn(page);
+	}
+	return page;
+}
+
+/** Run a page action; if the target went away mid-action (renderer swap),
+ * re-attach and retry, up to three times. */
+async function withPage(label, fn) {
+	for (let attempt = 1; ; attempt++) {
+		try {
+			return await fn(await live());
+		} catch (err) {
+			if (attempt >= 3 || !/closed|detached|Target|destroyed/i.test(String(err?.message))) throw err;
+			console.log(`  (re-attaching during ${label}: ${String(err.message).split("\n")[0]})`);
+			await sleep(1000);
+			page = await attach();
+		}
 	}
 }
 
@@ -83,15 +94,22 @@ async function dumpLogcat() {
 	console.log("------------------------------------");
 }
 
-async function currentUrl(page) {
-	return page.evaluate(() => location.href).catch(() => "(unavailable)");
+async function currentUrl() {
+	for (let i = 0; i < 3; i++) {
+		try {
+			return await (await live()).evaluate(() => location.href);
+		} catch {
+			await sleep(700);
+		}
+	}
+	return "(unavailable)";
 }
 
-async function waitForUrl(page, predicate, timeout = 30_000) {
+async function waitForUrl(_unused, predicate, timeout = 30_000) {
 	const start = Date.now();
 	let url = "";
 	while (Date.now() - start < timeout) {
-		url = await currentUrl(page);
+		url = await currentUrl();
 		if (predicate(url)) return url;
 		await sleep(500);
 	}
@@ -102,8 +120,8 @@ let page;
 try {
 	// 1. First launch: the connect screen.
 	page = await launch();
-	await page.waitForSelector("#form", { state: "visible", timeout: 30_000 });
-	check((await currentUrl(page)).startsWith("https://localhost/"), "first launch shows the local connect screen", await currentUrl(page));
+	await (await live()).waitForSelector("#form", { state: "visible", timeout: 30_000 });
+	check((await currentUrl()).startsWith("https://localhost/"), "first launch shows the local connect screen", await currentUrl());
 	await shot("01-connect");
 
 	// 2. Validation, then connect + pair.
@@ -114,14 +132,14 @@ try {
 		await p.fill("#code", "short");
 		await p.click("button[type=submit]");
 	});
-	check((await page.textContent("#error"))?.includes("access code"), "short code is rejected on the phone");
-	await page.fill("#code", CODE.toLowerCase());
-	await page.click("button[type=submit]");
+	check((await (await live()).textContent("#error"))?.includes("access code"), "short code is rejected on the phone");
+	await (await live()).fill("#code", CODE.toLowerCase());
+	await (await live()).click("button[type=submit]");
 	let url = await waitForUrl(page, (u) => u === `${SERVER}/`);
 	check(url === `${SERVER}/`, "pairing lands on the LearnHarness home page", url);
-	await page.waitForSelector("textarea", { timeout: 30_000 }).catch(() => {});
+	await (await live()).waitForSelector("textarea", { timeout: 30_000 }).catch(() => {});
 	await sleep(2000);
-	const home = await page.evaluate(() => ({
+	const home = await (await live()).evaluate(() => ({
 		composer: !!document.querySelector("textarea"),
 		width: innerWidth,
 		scrollWidth: document.documentElement.scrollWidth,
@@ -131,49 +149,49 @@ try {
 	await shot("02-home");
 
 	// 3. Sessions load over the network (API behind the pairing cookie).
-	await page.evaluate((id) => {
+	await (await live()).evaluate((id) => {
 		location.href = `/chat/${id}`;
 	}, TEACH);
 	url = await waitForUrl(page, (u) => u.endsWith(`/chat/${TEACH}`));
 	await sleep(4000);
-	const apiStatus = await page.evaluate(() => fetch("/api/graph/status").then((r) => r.status));
+	const apiStatus = await (await live()).evaluate(() => fetch("/api/graph/status").then((r) => r.status));
 	check(apiStatus === 200, "API calls carry the pairing cookie", String(apiStatus));
-	const teach = await page.evaluate(() => ({ text: document.body.innerText.slice(0, 4000), width: innerWidth, scrollWidth: document.documentElement.scrollWidth }));
+	const teach = await (await live()).evaluate(() => ({ text: document.body.innerText.slice(0, 4000), width: innerWidth, scrollWidth: document.documentElement.scrollWidth }));
 	check(teach.text.includes("test session"), "teaching session renders");
 	check(teach.scrollWidth <= teach.width, "no horizontal scroll in the teaching session", `${teach.scrollWidth} vs ${teach.width}`);
 	await shot("03-teach");
 
-	await page.evaluate((id) => {
+	await (await live()).evaluate((id) => {
 		location.href = `/chat/${id}`;
 	}, PRACTICE);
 	await waitForUrl(page, (u) => u.endsWith(`/chat/${PRACTICE}`));
 	await sleep(4000);
-	check((await page.evaluate(() => document.body.innerText)).includes("PROBLEM"), "practice session renders");
+	check((await (await live()).evaluate(() => document.body.innerText)).includes("PROBLEM"), "practice session renders");
 	await shot("04-practice");
 
 	// 4. Outside links open outside the app (the WebView stays put).
-	const before = await currentUrl(page);
-	await page.evaluate(() => {
+	const before = await currentUrl();
+	await (await live()).evaluate(() => {
 		location.href = "https://example.com/";
 	});
 	await sleep(3000);
-	check((await currentUrl(page)) === before, "outside link did not load inside the app", await currentUrl(page));
+	check((await currentUrl()) === before, "outside link did not load inside the app", await currentUrl());
 	await device.shell(`am start -W -n ${PKG}/.MainActivity`);
 	await sleep(1500);
 
 	// 5. Android back walks the history: practice → teach → home → connect screen.
 	await device.shell("input keyevent 4");
 	await sleep(2000);
-	check((await currentUrl(page)).endsWith(`/chat/${TEACH}`), "back: practice → teaching session", await currentUrl(page));
+	check((await currentUrl()).endsWith(`/chat/${TEACH}`), "back: practice → teaching session", await currentUrl());
 	await device.shell("input keyevent 4");
 	await sleep(2000);
-	check((await currentUrl(page)) === `${SERVER}/`, "back: teaching session → home", await currentUrl(page));
+	check((await currentUrl()) === `${SERVER}/`, "back: teaching session → home", await currentUrl());
 	await device.shell("input keyevent 4");
 	await sleep(3000);
-	url = await currentUrl(page);
-	const formVisible = await page.isVisible("#form").catch(() => false);
+	url = await waitForUrl(null, (u) => u.startsWith("https://localhost/"), 15_000);
+	const formVisible = await withPage("connect form visible", (p) => p.waitForSelector("#form", { state: "visible", timeout: 10_000 }).then(() => true)).catch(() => false);
 	check(url.startsWith("https://localhost/") && formVisible, "back: home → connect screen with the form (no auto-reconnect loop)", url);
-	check((await page.inputValue("#url").catch(() => "")) === SERVER, "connect screen keeps the saved server");
+	check((await (await live()).inputValue("#url").catch(() => "")) === SERVER, "connect screen keeps the saved server");
 	await shot("05-back-to-connect");
 
 	// 6. Cold restart: reconnects straight to the server.
@@ -184,19 +202,26 @@ try {
 
 	// 7. Unreachable server → the app's error page, with a way back.
 	await device.shell("input keyevent 4");
-	await sleep(2000);
-	await page.waitForSelector("#form", { state: "visible", timeout: 15_000 });
+	await sleep(3000);
 	const deadServer = SERVER.replace(/:(\d+)$/, ":3999");
-	await page.fill("#url", deadServer);
-	await page.fill("#code", CODE);
-	await page.click("button[type=submit]");
+	await withPage("open the connect form", async (p) => {
+		await p.waitForSelector("#form", { state: "visible", timeout: 15_000 });
+		await p.fill("#url", deadServer);
+		await p.fill("#code", CODE);
+		await p.click("button[type=submit]");
+	});
 	url = await waitForUrl(page, (u) => u.includes("error.html"), 20_000);
 	check(url.includes("error.html"), "unreachable server shows the error page", url);
 	await shot("07-error");
-	await page.click("#change");
-	await page.waitForSelector("#form", { state: "visible", timeout: 15_000 });
-	await page.fill("#url", SERVER);
-	await page.click("button[type=submit]");
+	await withPage("change server", async (p) => {
+		await p.click("#change");
+	});
+	await sleep(1500);
+	await withPage("reconnect", async (p) => {
+		await p.waitForSelector("#form", { state: "visible", timeout: 15_000 });
+		await p.fill("#url", SERVER);
+		await p.click("button[type=submit]");
+	});
 	url = await waitForUrl(page, (u) => u === `${SERVER}/`);
 	check(url === `${SERVER}/`, "change server from the error page", url);
 } catch (err) {
