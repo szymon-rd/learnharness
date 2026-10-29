@@ -9,6 +9,7 @@
 // pages; back button history; cold restart reconnects by itself; the error
 // page for an unreachable server; outside links stay out of the app.
 import { _android as android } from "playwright-core";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -55,20 +56,36 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const [device] = await android.devices();
 if (!device) throw new Error("no adb device");
 console.log(`device: ${device.model()} (${device.serial()})`);
+/** Device commands through plain adb: independent of Playwright's device
+ *  connection, which can close mid-run. Resolves to a Buffer like
+ *  device.shell did; never throws (failures come back as text). */
+const adbSerial = device.serial();
+function adbShell(command) {
+	try {
+		return Promise.resolve(execFileSync("adb", ["-s", adbSerial, "shell", command], { maxBuffer: 32 * 1024 * 1024 }));
+	} catch (err) {
+		return Promise.resolve(Buffer.from(String(err?.stdout ?? err?.message ?? "")));
+	}
+}
 const shot = async (name) => {
-	await device.screenshot({ path: path.join(shots, `${name}.png`) }).catch((e) => console.log(`screenshot ${name} failed: ${e.message}`));
+	try {
+		const png = execFileSync("adb", ["-s", adbSerial, "exec-out", "screencap", "-p"], { maxBuffer: 64 * 1024 * 1024 });
+		fs.writeFileSync(path.join(shots, `${name}.png`), png);
+	} catch (e) {
+		console.log(`screenshot ${name} failed: ${e.message}`);
+	}
 };
 
-await device.shell(`pm uninstall ${PKG}`).catch(() => {});
+await adbShell(`pm uninstall ${PKG}`).catch(() => {});
 await device.installApk(fs.readFileSync(apk));
-console.log((await device.shell(`dumpsys package ${PKG} | grep -E "versionName|versionCode|RECORD_AUDIO"`)).toString().trim());
-const webViewVersion = (await device.shell("dumpsys webviewupdate | grep -i 'Current WebView package'")).toString().trim();
+console.log((await adbShell(`dumpsys package ${PKG} | grep -E "versionName|versionCode|RECORD_AUDIO"`)).toString().trim());
+const webViewVersion = (await adbShell("dumpsys webviewupdate | grep -i 'Current WebView package'")).toString().trim();
 console.log(`WebView: ${webViewVersion}`);
 
 async function launch() {
-	await device.shell(`am force-stop ${PKG}`);
-	await device.shell("logcat -c").catch(() => {});
-	await device.shell(`am start -W -n ${PKG}/.MainActivity`);
+	await adbShell(`am force-stop ${PKG}`);
+	await adbShell("logcat -c").catch(() => {});
+	await adbShell(`am start -W -n ${PKG}/.MainActivity`);
 	return attach();
 }
 
@@ -118,7 +135,7 @@ async function withPage(label, fn) {
 }
 
 async function dumpLogcat() {
-	const log = (await device.shell("logcat -d -t 400").catch(() => Buffer.from(""))).toString();
+	const log = (await adbShell("logcat -d -t 400").catch(() => Buffer.from(""))).toString();
 	const lines = log.split("\n").filter((l) => /Capacitor|chromium|AndroidRuntime|ActivityTaskManager|ActivityManager.*learnharness|cr_|WebView|FATAL/i.test(l));
 	console.log("---- logcat (filtered, last 80) ----");
 	console.log(lines.slice(-80).join("\n"));
@@ -185,21 +202,21 @@ try {
 	// keyboard (the viewport resizes; nothing hides behind the IME).
 	try {
 		const p = await live();
-		await p.tap("textarea");
+		await p.click("textarea");
 		await sleep(2500);
 		const kb = await p.evaluate(() => {
 			const r = document.querySelector("textarea").getBoundingClientRect();
 			const vv = window.visualViewport;
 			return { bottom: Math.round(r.bottom), visible: Math.round(vv ? vv.height + vv.offsetTop : innerHeight), inner: innerHeight };
 		});
-		const ime = (await device.shell("dumpsys input_method | grep -m1 mInputShown")).toString().trim();
+		const ime = (await adbShell("dumpsys input_method | grep -m1 mInputShown")).toString().trim();
 		record(`  (keyboard: ${ime}; composer bottom ${kb.bottom}, visible height ${kb.visible}, innerHeight ${kb.inner})`);
 		check(kb.bottom <= kb.visible + 1, "composer stays above the soft keyboard", `${kb.bottom} vs ${kb.visible}`);
 		await shot("02b-keyboard");
 		await p.evaluate(() => document.activeElement?.blur());
 		await sleep(1000);
 		// Sidebar drawer over the page, then closed by its backdrop.
-		await p.tap('[aria-label="Open sidebar"]');
+		await p.click('[aria-label="Open sidebar"]');
 		await sleep(1200);
 		const drawer = await p.evaluate(() => {
 			const backdrop = document.querySelector('[data-testid="sidebar-backdrop"]');
@@ -245,19 +262,19 @@ try {
 	check((await currentUrl()) === before, "outside link did not load inside the app", await currentUrl());
 	// Close the browser the link opened: its first-run screen can otherwise
 	// pop up over the app much later and confuse the foreground checks.
-	for (const browser of ["com.android.chrome", "com.android.browser"]) await device.shell(`am force-stop ${browser}`).catch(() => {});
-	await device.shell(`am start -W -n ${PKG}/.MainActivity`);
+	for (const browser of ["com.android.chrome", "com.android.browser"]) await adbShell(`am force-stop ${browser}`).catch(() => {});
+	await adbShell(`am start -W -n ${PKG}/.MainActivity`);
 	await sleep(1500);
 
 	// 5. Android back walks the history: practice → teach → home → connect screen.
 	step("5. Android back walks the history: practice → teach → home → connect screen.");
-	await device.shell("input keyevent 4");
+	await adbShell("input keyevent 4");
 	await sleep(2000);
 	check((await currentUrl()).endsWith(`/chat/${TEACH}`), "back: practice → teaching session", await currentUrl());
-	await device.shell("input keyevent 4");
+	await adbShell("input keyevent 4");
 	await sleep(2000);
 	check((await currentUrl()) === `${SERVER}/`, "back: teaching session → home", await currentUrl());
-	await device.shell("input keyevent 4");
+	await adbShell("input keyevent 4");
 	await sleep(3000);
 	url = await waitForUrl(null, (u) => u.startsWith("https://localhost/"), 15_000);
 	const formVisible = await withPage("connect form visible", (p) => p.waitForSelector("#form", { state: "visible", timeout: 10_000 }).then(() => true)).catch(() => false);
@@ -275,8 +292,8 @@ try {
 	// 7. Unreachable server → the app's error page, with a way back.
 	step("7. Unreachable server → the app's error page, with a way back.");
 	// Fresh app data, so the connect form opens directly.
-	await device.shell(`am force-stop ${PKG}`);
-	await device.shell(`pm clear ${PKG}`);
+	await adbShell(`am force-stop ${PKG}`);
+	await adbShell(`pm clear ${PKG}`);
 	page = await launch();
 	await sleep(2000);
 	const deadServer = SERVER.replace(/:(\d+)$/, ":3999");
@@ -304,7 +321,7 @@ try {
 	await sleep(5000);
 	const loadedInApp = navigations.some((n) => n.at >= reconnectAt && n.url.startsWith(`${SERVER}/`));
 	check(loadedInApp, "the server loads inside the app's WebView after changing it");
-	const top = (await device.shell("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3")).toString().trim();
+	const top = (await adbShell("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3")).toString().trim();
 	check(top.includes(PKG), "the app stays in front (no external browser)", top.split("\n")[0]);
 	// DevTools sometimes fails to attach right after a relaunch, so give the
 	// relaunch two tries; the recorded navigations count as evidence too.
