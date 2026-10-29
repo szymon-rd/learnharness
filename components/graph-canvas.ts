@@ -629,6 +629,8 @@ export class GraphCanvasRenderer {
 
 	private resizeObserver: ResizeObserver;
 	private downPos: Pt | null = null;
+	/** Active touch pointer ids (touch taps vs pinches — see onPointerDown). */
+	private touches = new Set<number>();
 
 	// ── Cached world geometry ─────────────────────────────────────────────
 	// Everything above is drawn per frame; everything below is derived from
@@ -692,6 +694,7 @@ export class GraphCanvasRenderer {
 		canvas.addEventListener("pointerdown", this.onPointerDown);
 		canvas.addEventListener("pointerup", this.onPointerUp);
 		canvas.addEventListener("pointerleave", this.onPointerLeave);
+		canvas.addEventListener("pointercancel", this.onPointerCancel);
 		// Right-click → the caller's context menu (node interlude). Always
 		// preventDefault: the native menu on a full-bleed custom canvas is
 		// never useful; the caller decides what (if anything) opens.
@@ -906,6 +909,7 @@ export class GraphCanvasRenderer {
 		this.canvas.removeEventListener("pointerdown", this.onPointerDown);
 		this.canvas.removeEventListener("pointerup", this.onPointerUp);
 		this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
+		this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
 		this.canvas.removeEventListener("contextmenu", this.onContextMenu);
 		this.canvas.style.cursor = "";
 	}
@@ -963,6 +967,17 @@ export class GraphCanvasRenderer {
 		// used to open under the menu).
 		if (e.button !== 0) return;
 		const pos = this.eventPos(e);
+		// TOUCH (phone adaptation, 2026-10-29): a finger never drags a node —
+		// on a dense phone-sized graph nearly every pan would start on one
+		// and silently re-lay-out (and persist) the map. One finger pans (d3),
+		// a tap still selects through the stage path below; a second finger
+		// (pinch) cancels the pending tap.
+		if (e.pointerType === "touch") {
+			this.touches.add(e.pointerId);
+			this.downPos = this.touches.size === 1 ? pos : null;
+			this.zoomTarget = null;
+			return;
+		}
 		const node = this.pickAt(pos.x, pos.y);
 		if (node && this.sim) {
 			// Node press: pin the node (at ITS OWN position — the cursor
@@ -992,6 +1007,14 @@ export class GraphCanvasRenderer {
 	};
 
 	private onPointerUp = (e: PointerEvent) => {
+		if (e.pointerType === "touch") {
+			const wasPinch = this.touches.size > 1;
+			this.touches.delete(e.pointerId);
+			if (wasPinch) {
+				this.downPos = null; // a lifted pinch finger is never a tap
+				return;
+			}
+		}
 		if (e.button !== 0) return; // right-click is context-menu territory
 		// Node press ending: click (no slop) → select; drag → release-and-relax.
 		if (this.dragId) {
@@ -1037,6 +1060,11 @@ export class GraphCanvasRenderer {
 		const pos = this.eventPos(e);
 		const node = this.pickAt(pos.x, pos.y);
 		this.callbacks.onContext(node?.id ?? null, pos);
+	};
+
+	private onPointerCancel = (e: PointerEvent) => {
+		this.touches.delete(e.pointerId);
+		this.downPos = null;
 	};
 
 	private onPointerLeave = () => {

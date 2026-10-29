@@ -869,7 +869,7 @@ export function GraphChromeRow({
 	return (
 		<>
 			{!isEmpty && (
-				<div className="graph-chrome-fade-in w-56 min-w-0 shrink rounded-xl border bg-card/85 px-1 py-[3px] shadow-lg backdrop-blur">
+				<div className="graph-chrome-fade-in w-56 min-w-0 shrink rounded-xl border bg-card/85 px-1 py-[3px] shadow-lg backdrop-blur max-sm:w-auto max-sm:flex-1">
 					<Hint
 						// ⌘F focuses node search (surface-scoped registry action).
 						label="Search nodes"
@@ -906,7 +906,9 @@ export function GraphChromeRow({
 							className="flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent"
 						>
 							<ListTreeIcon className="size-3" />
-							Chains
+							{/* Phone: icon-only (the label stays for screen readers) —
+							    the row never wraps, so the search keeps its width. */}
+							<span className="max-sm:sr-only">Chains</span>
 						</button>
 					</Hint>
 				</div>
@@ -940,7 +942,7 @@ export function GraphChromeRow({
 					className="flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent disabled:opacity-50"
 				>
 						<UploadIcon className="size-3" />
-						{importing ? "Importing…" : "Import notes…"}
+						<span className="max-sm:sr-only">{importing ? "Importing…" : "Import notes…"}</span>
 					</button>
 				</Hint>
 			</div>
@@ -1482,10 +1484,18 @@ export function GraphView({
 			Math.max(selected.anchor.x - width / 2, margin),
 			Math.max(container.clientWidth - width - margin, margin),
 		);
-		let top = selected.anchor.y + gap;
-		if (top + height > container.clientHeight - margin) {
-			top = Math.max(selected.anchor.y - gap - height, margin);
+		// Phone (< sm): the floating chrome row spans the top band, so the
+		// card never rises into it (it would cover search/Chains/Import).
+		// …nor sinks into the bottom dock (composer + its control rows) —
+		// it rests between the two bands (its height is capped to fit).
+		const phone = window.matchMedia?.("(max-width: 639px)").matches === true;
+		const floor = phone ? 88 : margin;
+		const ceiling = container.clientHeight - (phone ? 240 : margin);
+		let top = Math.max(selected.anchor.y + gap, floor);
+		if (top + height > ceiling) {
+			top = Math.max(selected.anchor.y - gap - height, floor);
 		}
+		if (phone && top + height > ceiling) top = Math.max(floor, ceiling - height);
 		card.style.left = `${left}px`;
 		card.style.top = `${top}px`;
 		card.style.visibility = "visible";
@@ -1591,13 +1601,16 @@ export function GraphView({
 			    against the full-bleed parent) — the row NEVER wraps (owner
 			    rejected the two-row fold); in narrow windows the search is
 			    the flexible element and shrinks instead. */}
-			<div className="lh-no-drag lh-wco-floating absolute right-2 top-2 z-10 flex max-w-[calc(100%-5.5rem)] flex-col items-end gap-2">
+			<div className="lh-no-drag lh-wco-floating absolute right-2 top-2 z-10 flex max-w-[calc(100%-5.5rem)] flex-col items-end gap-2 max-sm:pointer-events-none max-sm:left-13 max-sm:top-[calc(0.5rem+env(safe-area-inset-top))] max-sm:max-w-none max-sm:[&>*]:pointer-events-auto">
 			{/* z-20 (2026-09-20): the row paints above the cost number below
 			    it — without this, the later-in-DOM cost control layered over
 			    the settings/coverage dropdowns (owner report), still hoverable
 			    and clickable on top of them. The row is a stacking context, so
 			    its open dropdowns cover the number; clicks land on the panel. */}
-			<div className="relative z-20 flex min-w-0 items-start gap-2">
+			{/* Phone: the column has a definite width (left inset clears the
+			    sidebar toggle), so the row fills it and the search flexes —
+			    its desktop w-56 would otherwise spill over the toggle. */}
+			<div className="relative z-20 flex min-w-0 items-start gap-2 max-sm:w-full max-sm:justify-end">
 				{/* The actions row (empty-graph chrome wave, owner 2026-09-25):
 				    Import Notes always — the empty graph's entry point; search +
 				    settings only when nodes exist, fading in on their mount. */}
@@ -1646,7 +1659,7 @@ export function GraphView({
 					// lh-no-drag: the card is placed anywhere on the canvas —
 					// when it lands in the top strip it must stay interactive
 					// over home.tsx's drag surface (2026-09-17).
-					className="lh-no-drag absolute z-10 w-80 max-w-[calc(100%-1rem)] rounded-xl border bg-card p-4 text-left shadow-lg"
+					className="lh-no-drag absolute z-10 w-80 max-w-[calc(100%-1rem)] rounded-xl border bg-card p-4 text-left shadow-lg max-sm:max-h-[max(8rem,calc(100dvh-21rem))] max-sm:overflow-y-auto"
 				>
 					<div className="text-sm font-medium leading-snug">{selected.node.name}</div>
 					<div className="mt-1 text-xs leading-relaxed text-muted-foreground">{selected.node.statement}</div>

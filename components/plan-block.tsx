@@ -12,7 +12,8 @@ import { layout as dagreLayout } from "dagre-d3-es/src/dagre/index.js";
 // Mermaid's default flowchart edge curve: dagre's waypoints drawn through
 // d3's curveBasis (the exact recipe dagre-d3's own renderer uses).
 import { curveBasis, line } from "d3-shape";
-import { fitGraphView, fitZoomFor, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
+import { fitGraphView, fitZoomFor, pinchedGraphView, zoomedGraphView, type Viewport } from "@/components/pan-zoom";
+import { usePinchGesture } from "@/components/pinch-gesture";
 import type { PlanBlockData, PlanNodeStatus, PlanTree } from "@/src/core";
 import { derivedNodeStatus, derivePlanStatuses } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
@@ -840,7 +841,17 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 	// per-frame — the transition is off while dragging or it rubber-bands.
 	const [panning, setPanning] = useState(false);
 	const dragRef = useRef<{ px: number; py: number; x: number; y: number; moved: boolean } | null>(null);
+	// Two-finger pinch (touch): zoom about the fingers + two-finger pan.
+	const pinch = usePinchGesture((factor, focus, shift) => {
+		userAdjustedRef.current = true;
+		setView((v) => pinchedGraphView(v, factor, focus, shift, fitZoom, box, size));
+	});
 	const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (pinch.down(e)) {
+			dragRef.current = null; // the second finger hands the gesture to the pinch
+			setPanning(true);
+			return;
+		}
 		if (e.button !== 0) return;
 		if ((e.target as HTMLElement).closest("button")) return;
 		if (atFloor) return;
@@ -850,6 +861,7 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 		e.currentTarget.setPointerCapture(e.pointerId);
 	};
 	const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (pinch.move(e)) return;
 		const d = dragRef.current;
 		if (!d) return;
 		d.moved = true;
@@ -858,6 +870,7 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 		);
 	};
 	const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+		pinch.up(e);
 		const d = dragRef.current;
 		if (d) {
 			dragRef.current = null;
@@ -884,7 +897,7 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 			// SESSION-SCOPED (absolute, not fixed): the chat page mounts this
 			// INSIDE the session-area div — below the drag bar, right of the
 			// sidebar. 80% + blur: the transcript ghosts through.
-			className="absolute inset-0 z-40 flex flex-col bg-background/80 p-4 backdrop-blur-sm"
+			className="absolute inset-0 z-40 flex flex-col bg-background/80 p-4 backdrop-blur-sm max-sm:p-2"
 			role="dialog"
 			aria-modal="true"
 			aria-label="The full plan"
@@ -893,15 +906,15 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 			}}
 		>
 			<div className="mb-2 flex items-center gap-2">
-				<span className="text-sm font-medium">The plan</span>
-				<span className="text-xs text-muted-foreground">live — statuses derive from your check outcomes</span>
+				<span className="shrink-0 text-sm font-medium">The plan</span>
+				<span className="min-w-0 text-xs text-muted-foreground max-sm:truncate">live — statuses derive from your check outcomes</span>
 				<Hint label="Close" binding="escape" side="left">
 <button
 					type="button"
 					onClick={onClose}
 					aria-label="Close"
 					data-testid="plan-popup-close"
-					className="ml-auto rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+					className="ml-auto rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground pointer-coarse:p-3"
 				>
 					<XIcon className="size-4" />
 				</button>
@@ -947,14 +960,15 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 							/>
 						</div>
 						<div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between p-2">
-							<span className="text-xs text-muted-foreground/60">Drag to pan · scroll to zoom</span>
+							<span className="text-xs text-muted-foreground/60 pointer-coarse:hidden">Drag to pan · scroll to zoom</span>
+							<span className="hidden text-xs text-muted-foreground/60 pointer-coarse:inline">Drag to pan · pinch to zoom</span>
 							<div className="flex gap-1">
 								<Hint label="Zoom out" side="bottom">
 <button
 									type="button"
 									aria-label="Zoom out"
 									onClick={() => stepZoom(1 / 1.25)}
-									className="pointer-events-auto flex size-7 items-center justify-center rounded-md border border-border/70 bg-card/80 text-muted-foreground backdrop-blur transition-colors hover:bg-accent hover:text-foreground"
+									className="pointer-events-auto flex size-7 items-center justify-center rounded-md border border-border/70 bg-card/80 text-muted-foreground backdrop-blur transition-colors hover:bg-accent hover:text-foreground pointer-coarse:size-10"
 								>
 									<MinusIcon className="size-3.5" />
 								</button>
@@ -965,7 +979,7 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 									aria-label="Fit plan to screen"
 									onClick={fitView}
 									data-testid="plan-popup-fit"
-									className="pointer-events-auto flex size-7 items-center justify-center rounded-md border border-border/70 bg-card/80 text-muted-foreground backdrop-blur transition-colors hover:bg-accent hover:text-foreground"
+									className="pointer-events-auto flex size-7 items-center justify-center rounded-md border border-border/70 bg-card/80 text-muted-foreground backdrop-blur transition-colors hover:bg-accent hover:text-foreground pointer-coarse:size-10"
 								>
 									<MaximizeIcon className="size-3.5" />
 								</button>
@@ -975,7 +989,7 @@ export function PlanPopup({ messages, onClose }: { messages: readonly PopupMessa
 									type="button"
 									aria-label="Zoom in"
 									onClick={() => stepZoom(1.25)}
-									className="pointer-events-auto flex size-7 items-center justify-center rounded-md border border-border/70 bg-card/80 text-muted-foreground backdrop-blur transition-colors hover:bg-accent hover:text-foreground"
+									className="pointer-events-auto flex size-7 items-center justify-center rounded-md border border-border/70 bg-card/80 text-muted-foreground backdrop-blur transition-colors hover:bg-accent hover:text-foreground pointer-coarse:size-10"
 								>
 									<PlusIcon className="size-3.5" />
 								</button>

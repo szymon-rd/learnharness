@@ -13,6 +13,9 @@ on:
       - "app/pair/**"
       - "src/server/remote-access.ts"
       - "scripts/phone-server.mjs"
+      # The phone UI itself (served by the phone server, driven by the smoke test).
+      - "app/**"
+      - "components/**"
   workflow_dispatch:
 
 permissions:

@@ -815,6 +815,11 @@ function QuestionDockForm({
 									"[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-current",
 									"[&::-moz-range-track]:h-4 [&::-moz-range-track]:bg-transparent",
 									"[&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-current",
+									// Touch: a 40px-tall hit band, centred on the same rail — the
+									// disc and rail look identical, only the grab area grows.
+									"pointer-coarse:inset-y-auto pointer-coarse:top-1/2 pointer-coarse:h-10 pointer-coarse:-translate-y-1/2",
+									"pointer-coarse:[&::-webkit-slider-runnable-track]:h-10 pointer-coarse:[&::-webkit-slider-thumb]:mt-3",
+									"pointer-coarse:[&::-moz-range-track]:h-10",
 								)}
 							/>
 						</div>
@@ -875,6 +880,7 @@ function QuestionDockForm({
 								}
 							}}
 							placeholder="Type your answer…"
+							enterKeyHint="send"
 							rows={1}
 							className="field-sizing-content lh-input max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 						/>
@@ -905,18 +911,21 @@ function QuestionDockForm({
 								}
 							}}
 							placeholder="Why this answer? Whatever comes to mind."
+							enterKeyHint="send"
 							rows={1}
 							className={cn(
 								"field-sizing-content lh-input max-h-48 w-full resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground/70",
 								// Phase-scaled prominence: teaching invites depth,
-								// probing stays quick.
-								phase === "teach" ? "min-h-[4.5rem]" : "min-h-10",
+								// probing stays quick. Phone: the options need the height
+								// more than an empty field does — it still grows as typed.
+								phase === "teach" ? "min-h-[4.5rem] max-sm:min-h-10" : "min-h-10",
 							)}
 						/>
 					)}
 					<div className="flex items-center justify-between gap-2 p-1">
 						<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
-								{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
+								{/* Touch keyboards have no ⇧↵ chord — the hint is keyboard-only. */}
+						{compactionRunning ? "compacting session…" : <span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>}
 						</span>
 						<Button
 							type="submit"

@@ -115,6 +115,9 @@ export function Composer({
 				}}
 				placeholder={placeholder}
 				autoFocus={autoFocus}
+				// Enter sends (the chat convention) — the soft keyboard's
+				// action key says so on touch devices.
+				enterKeyHint="send"
 				rows={1}
 				className="field-sizing-content lh-input max-h-48 min-h-10 flex-1 resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 			/>

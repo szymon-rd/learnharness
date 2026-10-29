@@ -53,3 +53,21 @@ export function zoomedGraphView(
 	const k = zoom / view.zoom;
 	return { zoom, x: focus.x - (focus.x - view.x) * k, y: focus.y - (focus.y - view.y) * k };
 }
+
+/** Two-finger pinch step (phone adaptation, 2026-10-29): zoom by the
+ *  finger-spread ratio about the fingers' midpoint, then follow the
+ *  midpoint's travel (two-finger pan). At the floor the view IS the fit —
+ *  nothing to pan, the zoom step already re-centred it. Pure. */
+export function pinchedGraphView(
+	view: Viewport,
+	factor: number,
+	focus: { x: number; y: number },
+	shift: { x: number; y: number },
+	floor: number,
+	box: { w: number; h: number },
+	viewport: { w: number; h: number },
+): Viewport {
+	const zoomed = zoomedGraphView(view, factor, floor, focus, box, viewport);
+	if (zoomed.zoom <= floor + 1e-9) return zoomed;
+	return { ...zoomed, x: zoomed.x + shift.x, y: zoomed.y + shift.y };
+}
