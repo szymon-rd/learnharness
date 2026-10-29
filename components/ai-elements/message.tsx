@@ -355,6 +355,24 @@ export const streamdownPlugins = {
   math: createMathPlugin({ singleDollarTextMath: true }),
 } as unknown as PluginConfig;
 
+/** Bounded memo for the pure text → text display transforms. Finished
+ * transcript text never changes, but every re-render used to re-run the
+ * math repair (which test-parses TeX) over every tool text in the session
+ * — the biggest single cost of a streamed delta on a phone. */
+function memoText(fn: (text: string) => string): (text: string) => string {
+  const cache = new Map<string, string>();
+  return (text) => {
+    const hit = cache.get(text);
+    if (hit !== undefined) return hit;
+    if (cache.size > 4000) cache.clear();
+    const out = fn(text);
+    cache.set(text, out);
+    return out;
+  };
+}
+const transformMathDelimitersCached = memoText(transformMathDelimiters);
+const repairMathForDisplayCached = memoText(repairMathForDisplay);
+
 export const MessageResponse = memo(
   ({ className, children, ...props }: MessageResponseProps) => {
     // Legacy backslash delimiters are converted in a single linear scan;
@@ -362,7 +380,7 @@ export const MessageResponse = memo(
     // legacy spans are left for a later render when their closer arrives.
     const content =
       typeof children === "string"
-        ? transformMathDelimiters(children)
+        ? transformMathDelimitersCached(children)
         : children;
 
     return (
@@ -390,13 +408,13 @@ MessageResponse.displayName = "MessageResponse";
 
 /** Recovery is a tool-text presentation concern, not a shape/answer-data
  * transform. Ordinary assistant/user prose keeps MessageResponse unchanged. */
-export function ToolContentResponse({ children, ...props }: MessageResponseProps) {
+export const ToolContentResponse = memo(function ToolContentResponse({ children, ...props }: MessageResponseProps) {
   return (
     <MessageResponse {...props}>
-      {typeof children === "string" ? repairMathForDisplay(children) : children}
+      {typeof children === "string" ? repairMathForDisplayCached(children) : children}
     </MessageResponse>
   );
-}
+});
 
 export type MessageToolbarProps = ComponentProps<"div">;
 

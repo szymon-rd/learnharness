@@ -9,7 +9,6 @@
  * component in the first place.
  */
 
-import { createMermaidPlugin } from "@streamdown/mermaid";
 import type { MermaidConfig } from "mermaid";
 
 /** The chart's base font size (px) — mermaid sizes ALL text relative to
@@ -30,13 +29,26 @@ export const mermaidTheme: MermaidConfig = {
 	theme: "dark",
 };
 
-const plugin = createMermaidPlugin();
+// Loaded on first use (the page-load round, 2026-10-29): mermaid is the
+// largest library in the session page (~530 KB) and most sessions never
+// draw a diagram, so it no longer ships with the page.
+let pluginPromise: Promise<ReturnType<typeof import("@streamdown/mermaid").createMermaidPlugin>> | null = null;
+function loadPlugin() {
+	pluginPromise ??= import("@streamdown/mermaid")
+		.then((m) => m.createMermaidPlugin())
+		.catch((err: unknown) => {
+			pluginPromise = null; // a failed download retries on the next chart
+			throw err;
+		});
+	return pluginPromise;
+}
 
 /** Render one chart source to an svg string. The id is unique per call —
  *  mermaid caches rendered ids, and a repeated id across charts/renders
  *  returns the stale svg (the bug streamdown's own id minting avoids). */
 export async function renderMermaid(chart: string): Promise<string> {
 	const id = `lh-mermaid-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+	const plugin = await loadPlugin();
 	const { svg } = await plugin.getMermaid(mermaidTheme).render(id, chart);
 	return svg;
 }

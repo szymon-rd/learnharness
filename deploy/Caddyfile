@@ -1,5 +1,22 @@
 # HTTPS certificate for LH_HOST from Let's Encrypt, renewed automatically.
-# No response compression: it would hold back the live (streamed) replies.
+#
+# Compression only for whole documents (JSON, HTML, CSS, JS, SVG): the
+# graph data alone is ~430 KB of JSON and the app server sends API JSON
+# uncompressed. Live replies (text/event-stream) are deliberately NOT
+# compressed — a compressor would hold back the streamed tokens.
+# Responses the app already compressed pass through untouched.
 {$LH_HOST} {
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type application/json*
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type application/javascript*
+			header Content-Type text/javascript*
+			header Content-Type image/svg+xml*
+		}
+	}
 	reverse_proxy learnharness:3210
 }

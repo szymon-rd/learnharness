@@ -28,6 +28,9 @@ export interface UseChatSessionOptions {
 	initiallyInFlight?: boolean;
 }
 
+/** Minimum time between transcript renders while a reply streams. */
+export const STREAM_RENDER_MS = 50;
+
 export function useChatSession({ chatId, initialMessages, initialError, initiallyInFlight }: UseChatSessionOptions) {
 	// The model is per-mount (chatId-keyed component); onChange forces the
 	// re-render. The ref pattern keeps it stable across renders.
@@ -44,9 +47,34 @@ export function useChatSession({ chatId, initialMessages, initialError, initiall
 	// error banner. The empty-session bug, 2026-09-26.)
 	const [version, bump] = useReducer((n: number) => n + 1, 0);
 	useEffect(() => {
-		model.onChange = bump;
+		// STREAMING FRAME BUDGET (phone-performance round, 2026-10-29): a
+		// streamed reply changes the model ~50×/s (one change per token
+		// delta), and each change re-renders the transcript. While the
+		// model is streaming, renders are coalesced to at most one per
+		// STREAM_RENDER_MS — the text still flows continuously, but a phone
+		// has time left to paint and scroll. Every other change (send,
+		// status, errors, the end of the stream) renders immediately.
+		let lastRender = 0;
+		let timer: ReturnType<typeof setTimeout> | null = null;
+		const flush = () => {
+			timer = null;
+			lastRender = performance.now();
+			bump();
+		};
+		model.onChange = () => {
+			if (model.status !== "streaming") {
+				if (timer) clearTimeout(timer);
+				flush();
+				return;
+			}
+			if (timer) return;
+			const wait = STREAM_RENDER_MS - (performance.now() - lastRender);
+			if (wait <= 0) flush();
+			else timer = setTimeout(flush, wait);
+		};
 		return () => {
 			model.onChange = undefined;
+			if (timer) clearTimeout(timer);
 		};
 	}, [model, bump]);
 

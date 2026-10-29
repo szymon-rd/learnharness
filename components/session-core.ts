@@ -27,6 +27,7 @@ import {
 	newThinkingMessage,
 	newUserMessage,
 	projectView,
+	stabilizeView,
 	type ChatInput,
 	type LhMarkerMessage,
 	type LhMessage,
@@ -242,6 +243,9 @@ export class SessionModel {
 	// at every full sync; the write-ahead absorbs the optimistic entries.
 	private base: LhMessage[];
 	private tail: LhMessage[] = [];
+	/** The last projected view: unchanged messages keep their objects
+	 *  across deltas (stabilizeView), so memoized rows skip re-rendering. */
+	private lastView: LhViewMessage[] | null = null;
 	private questionDrafts = new Map<string, QuestionDraft>();
 	/** Only learner answers submitted through send(), never silent dismissals. */
 	private unconfirmedAnswers = new Map<string, string>();
@@ -304,7 +308,7 @@ export class SessionModel {
 				? { message: latest.errorMessage ?? "An error occurred." }
 				: null;
 		return {
-			messages: projectView(messages, live),
+			messages: (this.lastView = stabilizeView(this.lastView, projectView(messages, live))),
 			nativeMessages: messages,
 			hasConfirmedConversation: this.base.some(m => m.role === "user" || m.role === "assistant"),
 			contextTokens: measuredContextTokens(messages, this.incompleteUsageIds),

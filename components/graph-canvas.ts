@@ -314,6 +314,23 @@ const REGION_EVERY = 3; // live-sim frames: rebuild every Nth, blit the rest
 
 
 
+/** Does this browser apply CanvasRenderingContext2D.filter? (Chrome,
+ *  Android WebView, Firefox, Safari 18+.) Probed once, lazily — module
+ *  scope stays DOM-free. */
+let filterSupport: boolean | null = null;
+function canvasFilterSupported(): boolean {
+	if (filterSupport !== null) return filterSupport;
+	try {
+		const probe = document.createElement("canvas").getContext("2d");
+		if (!probe || !("filter" in probe)) return (filterSupport = false);
+		probe.filter = "blur(2px)";
+		filterSupport = probe.filter === "blur(2px)";
+	} catch {
+		filterSupport = false;
+	}
+	return filterSupport;
+}
+
 /** One horizontal+vertical box-blur round over PREMULTIPLIED RGBA
  *  (Float32, stride 4, length w*h*4). Premultiplying first is what keeps
  *  the blur halo-free: blurring non-premultiplied RGB over varying alpha
@@ -642,6 +659,11 @@ export class GraphCanvasRenderer {
 	private shaftsPath: Path2D = new Path2D();
 	private headsPath: Path2D = new Path2D();
 	private regionCanvas: HTMLCanvasElement | null = null;
+	/** The blurred bitmap to blit, when the native filter path made it
+	 *  (else regionCanvas itself, blurred in JS), and the alpha to blit it
+	 *  with (the JS path bakes edgeAlpha into the pixels). */
+	private regionBlurCanvas: HTMLCanvasElement | null = null;
+	private regionBlitAlpha = 1;
 	/** World rect the bitmap covers (drawImage target coords). */
 	private regionRect: { minX: number; minY: number; w: number; h: number } | null = null;
 	/** Region labels: cluster centroid + hue, computed at splat build. */
@@ -653,6 +675,10 @@ export class GraphCanvasRenderer {
 	private regionBuiltVersion = -1;
 	private frameCount = 0; // draw counter for the live-sim splat throttle
 	private labelLines = new Map<string, string[]>();
+	/** Wrapped-label cache: font + width + text → lines. Positions change
+	 *  every live-sim frame, label text almost never — re-measuring every
+	 *  label per frame was the second-largest cost of a physics frame. */
+	private wrapCache = new Map<string, string[] | null>();
 	private worldLabelFont = "";
 	private world: WorldSizes = { nodeR: 0, glowOuter: 0, labelSize: 0, labelGap: 0 };
 
@@ -812,15 +838,24 @@ export class GraphCanvasRenderer {
 	 *  node positions (same node objects — x/y and any drag pin fx/fy
 	 *  survive; velocities restart clean, which reads as "re-relax with
 	 *  the new feel"). A mid-settle change re-anneals, which is the
-	 *  honest response to new physics. */
-	setPhysicsTuning(input: Partial<PhysicsTuning>): void {
-		this.physicsTuning = sanitizePhysicsTuning(input);
+	 *  honest response to new physics.
+	 *
+	 *  `reheat: false` (the stored settings arriving on page load) only
+	 *  installs the tuning: the saved layout IS the layout, and a full
+	 *  re-anneal on every open cost ~100 heavy frames (seconds of jank on
+	 *  a phone) and silently rewrote the positions ledger. An unchanged
+	 *  tuning never reheats either. */
+	setPhysicsTuning(input: Partial<PhysicsTuning>, options: { reheat?: boolean } = {}): void {
+		const next = sanitizePhysicsTuning(input);
+		const changed = JSON.stringify(next) !== JSON.stringify(this.physicsTuning);
+		this.physicsTuning = next;
+		if (!changed && this.sim) return;
 		this.buildSim();
 		// Reheat: a tuning change re-anneals the layout from its current
 		// state, so mode toggles (off/vertical/radial) visibly RE-FORM the
 		// graph instead of waiting for the next drag. Mid-drag is safe —
 		// buildSim preserved the pinned node's fx/fy.
-		if (this.sim) {
+		if (this.sim && changed && options.reheat !== false) {
 			this.sim.alpha(1);
 			this.simActive = true;
 		}
@@ -1323,9 +1358,22 @@ export class GraphCanvasRenderer {
 		ctx.font = this.worldLabelFont;
 		const maxW = LABEL_MAX_WIDTH * (settings.labelSize / LABEL_SIZE);
 		for (const n of data.nodes) {
-			if (isVisible(n.id) && !isImpNodeId(n.id)) this.labelLines.set(n.id, wrapLabel(ctx, n.label, maxW));
+			if (!isVisible(n.id) || isImpNodeId(n.id)) continue;
+			const lines = this.cachedWrap(`n|${this.worldLabelFont}|${maxW}|${n.label}`, () => wrapLabel(ctx, n.label, maxW));
+			if (lines) this.labelLines.set(n.id, lines);
 		}
 		ctx.font = prevFont;
+	}
+
+	/** Memoized label wrap (see wrapCache). Bounded: a cache that outgrows
+	 *  any plausible graph is simply dropped and refilled. */
+	private cachedWrap(key: string, wrap: () => string[] | null): string[] | null {
+		const hit = this.wrapCache.get(key);
+		if (hit !== undefined) return hit;
+		if (this.wrapCache.size > 20000) this.wrapCache.clear();
+		const lines = wrap();
+		this.wrapCache.set(key, lines);
+		return lines;
 	}
 
 	/** (Re)create the live sim from data.nodes at their current
@@ -1458,8 +1506,11 @@ export class GraphCanvasRenderer {
 			const prevFont = ctx.font;
 			ctx.font = `${LABEL_WEIGHT} ${settings.clusterLabelSize}px ${data.fontFamily}`;
 			for (const rm of this.regionMeta) {
-				rm.lines = rm.label
-					? wrapRegionLabel(rm.label, REGION_LABEL_MAX_WIDTH, REGION_LABEL_MAX_LINES, (s) => ctx.measureText(s).width)
+				const label = rm.label;
+				rm.lines = label
+					? this.cachedWrap(`r|${ctx.font}|${label}`, () =>
+							wrapRegionLabel(label, REGION_LABEL_MAX_WIDTH, REGION_LABEL_MAX_LINES, (s) => ctx.measureText(s).width),
+						)
 					: null;
 			}
 			ctx.font = prevFont;
@@ -1507,6 +1558,7 @@ export class GraphCanvasRenderer {
 			rc = document.createElement("canvas");
 			this.regionCanvas = rc;
 		}
+		const nativeBlur = canvasFilterSupported();
 		if (rc.width !== bw || rc.height !== bh) {
 			rc.width = bw;
 			rc.height = bh; // also clears
@@ -1514,7 +1566,7 @@ export class GraphCanvasRenderer {
 		// willReadFrequently: the blur step getImageData/putImageData every
 		// rebuild — Chrome keeps this canvas on the CPU instead of GPU-
 		// shuttling it.
-		const rctx = rc.getContext("2d", { willReadFrequently: true });
+		const rctx = rc.getContext("2d", { willReadFrequently: !nativeBlur });
 		if (!rctx) return;
 		rctx.clearRect(0, 0, bw, bh);
 		rctx.lineCap = "round";
@@ -1586,8 +1638,39 @@ export class GraphCanvasRenderer {
 		// still runs this path — boxBlurRound
 		// copies — so the end-alpha applies uniformly with or without
 		// blur.
+		const blurPx = tuning.blur > 0 ? Math.max(1, Math.round(blurW / cell)) : 0;
+		if (nativeBlur) {
+			// Native path (the phone-performance fix, 2026-10-29): the
+			// canvas blur filter is a Gaussian, and three box rounds of
+			// radius r ARE a Gaussian of σ = √(r(r+1)) to within a few
+			// percent — the same field, computed natively instead of a
+			// readback + three JS passes over every pixel (the single most
+			// expensive part of a live-physics frame on a phone). The canvas
+			// filter works on premultiplied pixels, so there is no halo, and
+			// edgeAlpha moves from the pixels to the blit's globalAlpha
+			// (identical: alpha is scaled once, at the very end).
+			let bc = this.regionBlurCanvas;
+			if (!bc) {
+				bc = document.createElement("canvas");
+				this.regionBlurCanvas = bc;
+			}
+			if (bc.width !== bw || bc.height !== bh) {
+				bc.width = bw;
+				bc.height = bh;
+			}
+			const bctx = bc.getContext("2d");
+			if (!bctx) return;
+			bctx.clearRect(0, 0, bw, bh);
+			bctx.filter = blurPx > 0 ? `blur(${Math.sqrt(blurPx * (blurPx + 1))}px)` : "none";
+			bctx.drawImage(rc, 0, 0);
+			bctx.filter = "none";
+			this.regionBlitAlpha = tuning.edgeAlpha;
+			this.regionRect = { minX, minY, w: spanX, h: spanY };
+			return;
+		}
+		this.regionBlurCanvas = null;
+		this.regionBlitAlpha = 1;
 		{
-			const blurPx = tuning.blur > 0 ? Math.max(1, Math.round(blurW / cell)) : 0;
 			const img = rctx.getImageData(0, 0, bw, bh);
 			const n = bw * bh * 4;
 			const a = new Float32Array(n);
@@ -1671,7 +1754,10 @@ export class GraphCanvasRenderer {
 		if (this.regionCanvas && this.regionRect) {
 			const { minX, minY, w, h } = this.regionRect;
 			ctx.imageSmoothingEnabled = true;
-			ctx.drawImage(this.regionCanvas, minX, minY, w, h);
+			const prevAlpha = ctx.globalAlpha;
+			ctx.globalAlpha = prevAlpha * this.regionBlitAlpha;
+			ctx.drawImage(this.regionBlurCanvas ?? this.regionCanvas, minX, minY, w, h);
+			ctx.globalAlpha = prevAlpha;
 		}
 
 		// 3. Edges: shafts + arrowheads from cached paths; width constant on

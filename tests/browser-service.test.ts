@@ -42,7 +42,11 @@ describe("browser-service helper (pure halves)", () => {
 });
 
 describe("browserServiceBinary", () => {
+	// This file also runs under Electron in CI (the standalone job), where
+	// the app's own binary always wins; under Node an explicit CHROME_PATH
+	// skips the Electron helper (no Electron download on a server).
 	it("an explicit CHROME_PATH outside Electron skips the Electron helper", () => {
-		assert.equal(browserServiceBinary({ CHROME_PATH: "/usr/bin/chromium" }), null);
+		const expected = process.versions.electron ? process.execPath : null;
+		assert.equal(browserServiceBinary({ CHROME_PATH: "/usr/bin/chromium" }), expected);
 	});
 });
