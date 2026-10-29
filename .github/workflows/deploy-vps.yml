@@ -7,9 +7,9 @@ name: Deploy to VPS
 #   status       show the running containers and check the HTTPS address
 #   logs         the last 200 log lines of the app and Caddy
 #   access-code  print the phone access code (shown in this run's log)
-# Pushing a tag vps-deploy-*, vps-status-*, vps-logs-* or vps-code-* runs the
-# same tasks from any branch (manual runs need the workflow on the default
-# branch).
+# Manual runs need this workflow on the default branch. From any branch,
+# committing a change to deploy/vps-request runs the task named on its first
+# line (deploy, status, logs or access-code).
 #
 # One-time setup (docs/deploy-vps.md, "Deploy with GitHub Actions"):
 #   secret VPS_HOST     the server's IPv4 address
@@ -26,7 +26,7 @@ on:
         options: [deploy, status, logs, access-code]
         default: deploy
   push:
-    tags: ["vps-deploy-*", "vps-status-*", "vps-logs-*", "vps-code-*"]
+    paths: ["deploy/vps-request"]
 
 permissions:
   contents: read
@@ -51,13 +51,14 @@ jobs:
         env:
           INPUT_TASK: ${{ inputs.task }}
         run: |
-          case "$GITHUB_EVENT_NAME:$GITHUB_REF_NAME" in
-            workflow_dispatch:*) task="$INPUT_TASK" ;;
-            *:vps-deploy-*) task=deploy ;;
-            *:vps-status-*) task=status ;;
-            *:vps-logs-*) task=logs ;;
-            *:vps-code-*) task=access-code ;;
-            *) echo "::error::unknown trigger $GITHUB_REF_NAME"; exit 1 ;;
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            task="$INPUT_TASK"
+          else
+            task=$(head -n1 deploy/vps-request | awk '{print $1}')
+          fi
+          case "$task" in
+            deploy|status|logs|access-code) ;;
+            *) echo "::error::unknown task '$task' (deploy, status, logs or access-code)"; exit 1 ;;
           esac
           echo "TASK=$task" >> "$GITHUB_ENV"
           echo "task: $task"
