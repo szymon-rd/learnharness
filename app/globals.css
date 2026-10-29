@@ -642,4 +642,10 @@ body {
 	:is(button, a, [role="button"], summary, label) {
 		touch-action: manipulation;
 	}
+	/* The code block's copy corner is always visible on touch (no hover to
+	   reveal it), so it gets a row of its own above the code instead of
+	   sitting on the first line. */
+	[data-testid="md-code"] [data-streamdown="code-block"] {
+		padding-top: 2rem;
+	}
 }

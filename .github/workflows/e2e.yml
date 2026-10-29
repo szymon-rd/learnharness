@@ -1,0 +1,51 @@
+name: E2E
+
+# The AI learning flow, driven through the phone UI (Playwright, Pixel 7)
+# against the production build with a scripted model — see
+# tests/e2e/learning-flow.e2e.mjs. No model API or network access needed.
+on:
+  push:
+    paths:
+      - "app/**"
+      - "components/**"
+      - "src/**"
+      - "tests/e2e/**"
+      - "proxy.ts"
+      - ".github/workflows/e2e.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  learning-flow:
+    name: Learning flow (phone UI)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: npm
+      - run: npm ci
+      - run: npx next build
+      # Same Playwright as the dev sandbox the test was written against.
+      - run: npm install --no-save playwright@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Run the e2e flow
+        run: node tests/e2e/learning-flow.e2e.mjs --out test-results/e2e
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: e2e-screenshots
+          path: test-results/e2e
+          if-no-files-found: ignore

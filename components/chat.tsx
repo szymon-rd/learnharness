@@ -2,7 +2,7 @@
 
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
-import { visibleQueuedSteers } from "@/components/session-core";
+import { STREAM_DROPPED, visibleQueuedSteers } from "@/components/session-core";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
 import { useModelSetup, selectedModelUnavailable, openModelPicker, ZeroKeysPill } from "@/components/setup-cta";
@@ -777,10 +777,35 @@ export function Chat({
 	 * when nothing is active; the two never overlap). */
 	useEnterSubmits(sendNext);
 
+	// The latest syncFromServer, for the back-online retry below (the
+	// callback cannot name itself inside its own useCallback).
+	const syncFromServerRef = useRef<() => Promise<void>>(async () => {});
+	const syncRetryArmedRef = useRef(false);
 	const syncFromServer = useCallback(async () => {
-		const res = await fetch(`/api/chats/${chatId}`);
-		if (!res.ok) return;
-		const record = (await res.json()) as { messages?: LhMessage[]; turns?: TurnUsage[]; pricing?: SessionPricing; turnError?: string };
+		let record: { messages?: LhMessage[]; turns?: TurnUsage[]; pricing?: SessionPricing; turnError?: string };
+		try {
+			const res = await fetch(`/api/chats/${chatId}`);
+			if (!res.ok) return;
+			record = (await res.json()) as typeof record;
+		} catch {
+			// The network dropped (a phone between networks, the app
+			// backgrounded): every caller fires and forgets, so a throw here
+			// was an unhandled rejection — and the settle-time canonical sync
+			// it skipped would leave the streamed tail un-canonized. Adopt the
+			// record once the connection is back instead (one armed retry).
+			if (!syncRetryArmedRef.current) {
+				syncRetryArmedRef.current = true;
+				window.addEventListener(
+					"online",
+					() => {
+						syncRetryArmedRef.current = false;
+						void syncFromServerRef.current();
+					},
+					{ once: true },
+				);
+			}
+			return;
+		}
 		if (Array.isArray(record.turns)) setTurns(record.turns);
 		setPricing(record.pricing);
 		if (!Array.isArray(record.messages)) return;
@@ -794,6 +819,7 @@ export function Chat({
 		// sync must never automatically replace a reply that failed to save.
 		continueIfOwed(record.messages);
 	}, [chatId, setMessages, continueIfOwed]);
+	syncFromServerRef.current = syncFromServer;
 
 	// The settled terminal's other half (stream-reattach wave): the
 	// transport resolved turn-settled — no turn running, the record is
@@ -988,29 +1014,55 @@ export function Chat({
 	// from its view, so the server turn runs ON behind the error banner —
 	// re-enter the in-flight watch (the 1500ms fallback poll adopts at
 	// settle) instead of leaving the session blind until the next send's
-	// 409 merge-retry heals it. One record check per error transition.
+	// 409 merge-retry heals it. One record check per error transition —
+	// and, when that check itself cannot reach the server (a phone that
+	// dropped off the network), once more when the connection is back:
+	// the events channel reopening or the browser's `online`. Without that
+	// second chance a turn that FINISHED while the phone was offline left
+	// the view stuck on the drop banner (its turn-settled event was missed)
+	// until a manual reload.
+	const dropCheckOwedRef = useRef(false);
+	const errorRef = useRef(error);
+	errorRef.current = error;
+	const checkDroppedTurn = useCallback(async () => {
+		let record: { turnInFlight?: boolean };
+		try {
+			const res = await fetch(`/api/chats/${chatId}`);
+			if (!res.ok) return;
+			record = (await res.json()) as { turnInFlight?: boolean };
+		} catch {
+			return; /* still unreachable — the reconnect retries (below) */
+		}
+		dropCheckOwedRef.current = false;
+		if (statusRef.current !== "error") return; // healed meanwhile
+		if (record.turnInFlight === true) {
+			setTurnInFlight(true);
+			return;
+		}
+		// The turn is over and the record is its durable truth. A transport
+		// drop's banner no longer describes anything (the reply is in the
+		// record); a real turn error rides record.turnError back in.
+		if (errorRef.current?.message === STREAM_DROPPED) clearError();
+		void syncFromServer();
+	}, [chatId, syncFromServer, clearError]);
 	const prevErrorStatusRef = useRef(status);
 	useEffect(() => {
 		const was = prevErrorStatusRef.current;
 		prevErrorStatusRef.current = status;
 		if (was === "error" || status !== "error") return;
-		let cancelled = false;
-		void (async () => {
-			try {
-				const res = await fetch(`/api/chats/${chatId}`);
-				if (!res.ok || cancelled) return;
-				const record = (await res.json()) as { turnInFlight?: boolean };
-				if (cancelled) return;
-				if (record.turnInFlight === true) setTurnInFlight(true);
-				else void syncFromServer();
-			} catch {
-				/* transient — the banner stands; the next send's merge-retry heals */
-			}
-		})();
-		return () => {
-			cancelled = true;
+		dropCheckOwedRef.current = true;
+		void checkDroppedTurn();
+	}, [status, checkDroppedTurn]);
+	useServerResync(() => {
+		if (dropCheckOwedRef.current) void checkDroppedTurn();
+	});
+	useEffect(() => {
+		const onOnline = () => {
+			if (dropCheckOwedRef.current) void checkDroppedTurn();
 		};
-	}, [status, chatId, syncFromServer]);
+		window.addEventListener("online", onOnline);
+		return () => window.removeEventListener("online", onOnline);
+	}, [checkDroppedTurn]);
 
 	// ── Central job observability (contracts.ts "THE ASYNC PROTOCOL" §4) ──
 	// ONE fetch of /api/jobs drives every job surface (transcript dispatch

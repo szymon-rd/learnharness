@@ -25,3 +25,6 @@ phone-access-code
 
 # VPS deploy settings (deploy/.env.example is the template)
 deploy/.env
+
+# End-to-end test screenshots (tests/e2e/learning-flow.e2e.mjs)
+test-results/
