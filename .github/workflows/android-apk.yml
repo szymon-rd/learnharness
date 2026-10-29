@@ -136,7 +136,10 @@ jobs:
           script: node mobile/scripts/webview-smoke.mjs mobile/dist/LearnHarness.apk http://10.0.2.2:3210 "$LH_SMOKE_CODE" mobile/smoke-shots
       - name: Phone server log
         if: always()
-        run: tail -50 "$RUNNER_TEMP/phone.log" || true
+        run: tail -15 "$RUNNER_TEMP/phone.log" || true
+      - name: Smoke results
+        if: always()
+        run: cat mobile/smoke-shots/results.txt || echo "no results file"
       - uses: actions/upload-artifact@v5
         if: always()
         with:

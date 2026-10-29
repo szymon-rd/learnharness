@@ -37,8 +37,17 @@ setTimeout(() => {
 	console.log(`FAIL: smoke test timed out during "${currentStep}"`);
 	process.exit(1);
 }, 7 * 60_000).unref();
+/** Results also go to a file, printed as the job's last step. */
+function record(line) {
+	console.log(line);
+	try {
+		fs.appendFileSync(path.join(shots, "results.txt"), `${line}\n`);
+	} catch {
+		/* the shots dir is created below; early lines only reach stdout */
+	}
+}
 function check(ok, label, detail = "") {
-	console.log(`${ok ? "PASS" : "FAIL"}: ${label}${detail ? ` — ${detail}` : ""}`);
+	record(`${ok ? "PASS" : "FAIL"}: ${label}${detail ? ` — ${detail}` : ""}`);
 	if (!ok) failures++;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -184,7 +193,7 @@ try {
 			return { bottom: Math.round(r.bottom), visible: Math.round(vv ? vv.height + vv.offsetTop : innerHeight), inner: innerHeight };
 		});
 		const ime = (await device.shell("dumpsys input_method | grep -m1 mInputShown")).toString().trim();
-		console.log(`  (keyboard: ${ime}; composer bottom ${kb.bottom}, visible height ${kb.visible}, innerHeight ${kb.inner})`);
+		record(`  (keyboard: ${ime}; composer bottom ${kb.bottom}, visible height ${kb.visible}, innerHeight ${kb.inner})`);
 		check(kb.bottom <= kb.visible + 1, "composer stays above the soft keyboard", `${kb.bottom} vs ${kb.visible}`);
 		await shot("02b-keyboard");
 		await p.evaluate(() => document.activeElement?.blur());
@@ -314,7 +323,7 @@ try {
 		sawServer = navigations.some((n) => n.at >= relaunchedAt && n.url === `${SERVER}/`);
 	}
 	if (!attached && !sawServer) {
-		console.log("SKIP: changed server reconnects after restart — DevTools could not attach to the relaunched WebView");
+		record("SKIP: changed server reconnects after restart — DevTools could not attach to the relaunched WebView");
 	} else {
 		check(url === `${SERVER}/` || sawServer, "changed server is saved and reconnects after restart", url === `${SERVER}/` ? url : `navigation log: ${sawServer ? SERVER + "/" : "none"}`);
 	}
@@ -325,10 +334,10 @@ try {
 		// The emulator's DevTools socket for the WebView sometimes never comes
 		// back after the last origin switches. Every app behaviour before this
 		// point was checked; report the gap instead of failing on the tool.
-		console.log(`SKIP: rest of step 7 — DevTools lost the WebView (${String(err.message).split("\n")[0]})`);
+		record(`SKIP: rest of step 7 — DevTools lost the WebView (${String(err.message).split("\n")[0]})`);
 	} else {
 		failures++;
-		console.log(`FAIL: smoke test crashed — ${err?.stack ?? err}`);
+		record(`FAIL: smoke test crashed — ${err?.stack ?? err}`);
 	}
 	await shot("99-crash");
 } finally {
