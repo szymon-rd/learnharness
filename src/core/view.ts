@@ -481,3 +481,61 @@ function projectMarker(marker: LhMarkerMessage, out: LhViewMessage[]): void {
 		}
 	}
 }
+
+/** Structural equality over plain JSON-like data (view parts are plain
+ *  objects, arrays, strings, numbers, booleans, null/undefined). */
+export function plainEqual(a: unknown, b: unknown): boolean {
+	if (a === b) return true;
+	if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+	if (Array.isArray(a)) {
+		if (!Array.isArray(b) || a.length !== b.length) return false;
+		for (let i = 0; i < a.length; i++) if (!plainEqual(a[i], b[i])) return false;
+		return true;
+	}
+	if (Array.isArray(b)) return false;
+	const ka = Object.keys(a as object);
+	const kb = Object.keys(b as object);
+	if (ka.length !== kb.length) return false;
+	for (const k of ka) {
+		if (!Object.prototype.hasOwnProperty.call(b, k)) return false;
+		if (!plainEqual((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
+	}
+	return true;
+}
+
+/** Structural sharing between two projections (the streaming fix,
+ *  2026-10-29): projectView rebuilds every message and part on every
+ *  streamed delta, so nothing downstream could tell an untouched message
+ *  from a changed one — the whole transcript re-rendered and re-parsed
+ *  ~50×/s. This keeps the PREVIOUS object for every message (and, inside
+ *  a changed message, every part) that is structurally equal, so memoized
+ *  rendering skips all but the message that is actually growing. Pure;
+ *  returns `prev` itself when nothing changed. */
+export function stabilizeView(prev: readonly LhViewMessage[] | null, next: LhViewMessage[]): LhViewMessage[] {
+	if (!prev || prev.length === 0) return next;
+	const byId = new Map<string, LhViewMessage>();
+	for (const m of prev) if (m.id) byId.set(m.id, m);
+	let allSame = prev.length === next.length;
+	const out = next.map((m, i) => {
+		const old = (m.id ? byId.get(m.id) : undefined) ?? prev[i];
+		if (!old || old.role !== m.role || old.id !== m.id) {
+			allSame = false;
+			return m;
+		}
+		let partsSame = old.parts.length === m.parts.length;
+		const parts = m.parts.map((p, pi) => {
+			const op = old.parts[pi];
+			if (op !== undefined && plainEqual(op, p)) return op;
+			partsSame = false;
+			return p;
+		});
+		const metaSame = plainEqual(old.metadata, m.metadata);
+		if (partsSame && metaSame) {
+			if (prev[i] !== old) allSame = false;
+			return old;
+		}
+		allSame = false;
+		return { ...m, parts, metadata: metaSame ? old.metadata : m.metadata };
+	});
+	return allSame ? (prev as LhViewMessage[]) : out;
+}
