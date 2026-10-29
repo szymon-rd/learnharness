@@ -1,0 +1,18 @@
+{
+	"name": "learnharness-android",
+	"version": "0.1.0",
+	"private": true,
+	"license": "AGPL-3.0-only",
+	"description": "Android app for LearnHarness: connects to a LearnHarness phone server (see ../docs/android.md).",
+	"scripts": {
+		"sync": "cap sync android",
+		"apk": "cap sync android && cd android && ./gradlew assembleRelease"
+	},
+	"dependencies": {
+		"@capacitor/android": "8.5.3",
+		"@capacitor/core": "8.5.3"
+	},
+	"devDependencies": {
+		"@capacitor/cli": "8.5.3"
+	}
+}

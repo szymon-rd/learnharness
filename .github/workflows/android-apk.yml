@@ -1,0 +1,66 @@
+name: Android APK
+
+# Builds the Android app (mobile/) and publishes the APK as the
+# "android-latest" GitHub release, so it can be downloaded straight to a
+# phone. See docs/android.md.
+on:
+  push:
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    name: Build APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - run: npm ci
+      - run: npx cap sync android
+      - name: Build signed release APK
+        working-directory: mobile/android
+        env:
+          LH_ANDROID_VERSION_CODE: ${{ github.run_number }}
+          LH_ANDROID_VERSION_NAME: 0.1.${{ github.run_number }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk dist/LearnHarness.apk
+          ls -la dist
+      - uses: actions/upload-artifact@v5
+        with:
+          name: LearnHarness-apk
+          path: mobile/dist/LearnHarness.apk
+      - name: Publish the "android-latest" release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete android-latest --yes --cleanup-tag || true
+          gh release create android-latest dist/LearnHarness.apk \
+            --prerelease \
+            --target "${{ github.sha }}" \
+            --title "LearnHarness Android (build ${{ github.run_number }})" \
+            --notes "Android app built from ${{ github.ref_name }} @ ${{ github.sha }}. Install LearnHarness.apk on the phone, then follow docs/android.md to connect it to the phone server on your computer."

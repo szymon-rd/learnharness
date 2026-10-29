@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="dark">
+	<title>LearnHarness</title>
+	<link rel="stylesheet" href="app.css">
+</head>
+<body>
+	<main>
+		<h1>Can't load LearnHarness</h1>
+		<p class="lead">The server at <strong id="server">your computer</strong> did not answer, or returned an error.</p>
+		<ul class="checks">
+			<li>Is <code>npm run phone</code> still running on your computer?</li>
+			<li>Is the phone on the same Wi-Fi (or Tailscale) as the computer?</li>
+			<li>Did the computer go to sleep?</li>
+		</ul>
+		<button id="retry" type="button">Try again</button>
+		<button id="change" type="button" class="secondary">Change server</button>
+	</main>
+	<script src="connect.js"></script>
+	<script>
+		LH.initErrorPage();
+	</script>
+</body>
+</html>
