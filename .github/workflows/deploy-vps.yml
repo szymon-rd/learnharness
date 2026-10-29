@@ -1,15 +1,12 @@
 name: Deploy to VPS
 
-# Deploys this branch to your own server over SSH and runs it there with
+# Deploys the chosen branch (main by default) to your own server over SSH and runs it there with
 # deploy/docker-compose.yml (the app plus Caddy for HTTPS). Run it from the
 # Actions tab (Run workflow) and pick a task:
 #   deploy       copy this commit to the server, build and (re)start it
 #   status       show the running containers and check the HTTPS address
 #   logs         the last 200 log lines of the app and Caddy
 #   access-code  print the phone access code (shown in this run's log)
-# Manual runs need this workflow on the default branch. From any branch,
-# committing a change to deploy/vps-request runs the task named on its first
-# line (deploy, status, logs or access-code).
 #
 # One-time setup (docs/deploy-vps.md, "Deploy with GitHub Actions"):
 #   secret VPS_HOST     the server's IPv4 address
@@ -25,8 +22,6 @@ on:
         type: choice
         options: [deploy, status, logs, access-code]
         default: deploy
-  push:
-    paths: ["deploy/vps-request"]
 
 permissions:
   contents: read
@@ -51,11 +46,7 @@ jobs:
         env:
           INPUT_TASK: ${{ inputs.task }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-            task="$INPUT_TASK"
-          else
-            task=$(head -n1 deploy/vps-request | awk '{print $1}')
-          fi
+          task="$INPUT_TASK"
           case "$task" in
             deploy|status|logs|access-code) ;;
             *) echo "::error::unknown task '$task' (deploy, status, logs or access-code)"; exit 1 ;;

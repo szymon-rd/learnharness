@@ -28,7 +28,6 @@ curl -fsSL https://get.docker.com | sh
 # 2. The code (a private repo needs a GitHub token or deploy key to clone)
 git clone https://github.com/szymon-rd/learnharness.git
 cd learnharness
-git checkout ccr-b09c2bac-6zjr2c        # the branch with the Android work, until it is merged
 
 # 3. Settings: the hostname the phone will use
 cd deploy
@@ -70,8 +69,6 @@ Then **Actions → Deploy to VPS → Run workflow**, with the task:
 | `status` | running containers, deployed commit, disk and memory |
 | `logs` | last 200 log lines of the app and Caddy |
 | `access-code` | print the phone access code in the run's log |
-
-The **Run workflow** button only appears once the workflow is on the default branch. From any branch, committing a change to `deploy/vps-request` runs the task named on its first line, for example `printf 'deploy %s\n' "$(date -u +%FT%TZ)" > deploy/vps-request`, then commit and push.
 
 The data stays in the Docker volumes across deploys. Anyone who can run workflows in the repository can control the server through this key; remove the key line from `authorized_keys` to revoke it.
 

@@ -73,6 +73,7 @@ jobs:
           name: LearnHarness-apk
           path: mobile/dist/LearnHarness.apk
       - name: Publish the "android-latest" release
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -81,7 +82,7 @@ jobs:
             --prerelease \
             --target "${{ github.sha }}" \
             --title "LearnHarness Android (build ${{ github.run_number }})" \
-            --notes "Android app built from ${{ github.ref_name }} @ ${{ github.sha }}. Install LearnHarness.apk on the phone, then follow docs/android.md to connect it to the phone server on your computer."
+            --notes "Android app built from ${{ github.ref_name }} @ ${{ github.sha }}. Install LearnHarness.apk on the phone, then follow docs/android.md to connect it to your LearnHarness server (docs/deploy-vps.md)."
 
   smoke:
     name: Emulator smoke test (API ${{ matrix.api }})
