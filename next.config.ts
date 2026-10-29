@@ -52,6 +52,8 @@ const nextConfig: NextConfig = {
 			"github-copilot-credentials.json*",
 			"xai-credentials.json*",
 			".env*",
+			// Phone-server access code (scripts/phone-server.mjs, --repo-data mode).
+			"phone-access-code",
 		],
 	},
 	// Empirically verified gaps (2026-09-17 standalone smoke): the tracer

@@ -8,6 +8,11 @@ on:
     paths:
       - "mobile/**"
       - ".github/workflows/android-apk.yml"
+      # The phone server the app connects to (checked by the smoke job).
+      - "proxy.ts"
+      - "app/pair/**"
+      - "src/server/remote-access.ts"
+      - "scripts/phone-server.mjs"
   workflow_dispatch:
 
 permissions:
@@ -50,6 +55,16 @@ jobs:
           mkdir -p dist
           cp android/app/build/outputs/apk/release/app-release.apk dist/LearnHarness.apk
           ls -la dist
+      - name: Verify APK
+        working-directory: mobile/android
+        run: |
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=../dist/LearnHarness.apk
+          "$BT/aapt2" dump badging "$APK" | grep -E "^package:|uses-permission|application-label:|sdkVersion|targetSdkVersion"
+          "$BT/aapt2" dump xmltree --file AndroidManifest.xml "$APK" | grep -E "usesCleartextTraffic|allowBackup"
+          "$BT/apksigner" verify --print-certs "$APK" | head -3
+          unzip -l "$APK" | grep -E "assets/public/(index|error)\.html|assets/public/connect\.js"
+          unzip -p "$APK" 'classes*.dex' | grep -a -c "ServerLinkPlugin" | xargs -I{} echo "ServerLinkPlugin references in dex: {}"
       - uses: actions/upload-artifact@v5
         with:
           name: LearnHarness-apk
@@ -64,3 +79,59 @@ jobs:
             --target "${{ github.sha }}" \
             --title "LearnHarness Android (build ${{ github.run_number }})" \
             --notes "Android app built from ${{ github.ref_name }} @ ${{ github.sha }}. Install LearnHarness.apk on the phone, then follow docs/android.md to connect it to the phone server on your computer."
+
+  smoke:
+    name: Emulator smoke test
+    needs: apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      LH_SMOKE_CODE: TEST-CODE-0000-1111-2222
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - run: npm ci
+      - run: npx next build
+      - name: Start the phone server with the sample data
+        run: |
+          mkdir -p "$RUNNER_TEMP/lh"
+          cp -r tests/fixtures/golden-data "$RUNNER_TEMP/lh/data"
+          echo "$LH_SMOKE_CODE" > "$RUNNER_TEMP/lh/phone-access-code"
+          LH_DATA_DIR="$RUNNER_TEMP/lh/data" LH_AUTH_FILE="$RUNNER_TEMP/lh/auth.json" \
+            nohup node scripts/phone-server.mjs --port 3210 > "$RUNNER_TEMP/phone.log" 2>&1 &
+          for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:3210/pair && break; sleep 2; done
+          cat "$RUNNER_TEMP/phone.log"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3210/api/graph)" = 401
+      - uses: actions/download-artifact@v5
+        with:
+          name: LearnHarness-apk
+          path: mobile/dist
+      - name: Install the smoke-test driver
+        working-directory: mobile
+        run: npm ci && npm install --no-save playwright-core@1.63.0
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot-save
+          script: node mobile/scripts/webview-smoke.mjs mobile/dist/LearnHarness.apk http://10.0.2.2:3210 "$LH_SMOKE_CODE" mobile/smoke-shots
+      - name: Phone server log
+        if: always()
+        run: tail -50 "$RUNNER_TEMP/phone.log" || true
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: smoke-screenshots
+          path: mobile/smoke-shots
