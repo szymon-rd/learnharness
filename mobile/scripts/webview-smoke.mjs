@@ -202,6 +202,9 @@ try {
 	});
 	await sleep(3000);
 	check((await currentUrl()) === before, "outside link did not load inside the app", await currentUrl());
+	// Close the browser the link opened: its first-run screen can otherwise
+	// pop up over the app much later and confuse the foreground checks.
+	for (const browser of ["com.android.chrome", "com.android.browser"]) await device.shell(`am force-stop ${browser}`).catch(() => {});
 	await device.shell(`am start -W -n ${PKG}/.MainActivity`);
 	await sleep(1500);
 
@@ -249,6 +252,7 @@ try {
 		await p.click("#change");
 	});
 	await sleep(1500);
+	const reconnectAt = Date.now();
 	await withPage("reconnect", async (p) => {
 		await p.waitForSelector("#form", { state: "visible", timeout: 15_000 });
 		await p.fill("#url", SERVER);
@@ -257,8 +261,10 @@ try {
 	// The page switches origin here, which can leave DevTools without a page
 	// to re-attach to; check from the outside instead.
 	await sleep(5000);
+	const loadedInApp = navigations.some((n) => n.at >= reconnectAt && n.url.startsWith(`${SERVER}/`));
+	check(loadedInApp, "the server loads inside the app's WebView after changing it");
 	const top = (await device.shell("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3")).toString().trim();
-	check(top.includes(PKG), "the server opens inside the app (no external browser)", top.split("\n")[0]);
+	check(top.includes(PKG), "the app stays in front (no external browser)", top.split("\n")[0]);
 	const relaunchedAt = Date.now();
 	page = await launch();
 	url = await waitForUrl(null, (u) => u === `${SERVER}/`, 15_000);
