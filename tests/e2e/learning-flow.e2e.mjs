@@ -614,6 +614,8 @@ async function phoneFlow(browser, base, proxy) {
 		await page.getByTestId("demo-iframe").first().waitFor({ state: "visible" });
 		const posterior = await page.frameLocator("[data-testid=demo-iframe]").first().locator("#out").innerText({ timeout: 15_000 });
 		if (!/^0\.\d+$/.test(posterior)) throw new Error(`the demo did not run inside its card (posterior "${posterior}")`);
+		await demo.evaluate((el) => el.scrollIntoView({ block: "start" }));
+		await page.screenshot({ path: path.join(OUT, "demo-running.png") });
 	});
 
 	await step("b5", "ask: pick how to continue; the teacher concludes the plan", page, w, async () => {
