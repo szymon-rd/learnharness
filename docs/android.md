@@ -29,7 +29,7 @@ It prints something like:
 
 - **Which data it uses.** If the LearnHarness desktop app has data on this computer, the phone server uses that data and those API keys, so the phone sees your existing graph and sessions. **Quit the desktop app first.** The script refuses to start while it runs, and you must not open the desktop app while the phone server runs, because both would write the same files. To use the repository's `data/` folder instead (what `npm run dev` uses), run `npm run phone -- --repo-data`.
 - **Keep the computer awake.** On macOS: `caffeinate -i npm run phone`.
-- **After pulling new code**, rebuild: `npm run phone -- --build`.
+- **After pulling new code** it rebuilds by itself. To force a rebuild, run `npm run phone -- --build`.
 - **Other options:** `--port 4000`, `--new-code` (makes a new access code and signs out every paired device).
 
 ## 2. Install the app

@@ -44,9 +44,43 @@ console.log(`WebView: ${webViewVersion}`);
 
 async function launch() {
 	await device.shell(`am force-stop ${PKG}`);
+	await device.shell("logcat -c").catch(() => {});
 	await device.shell(`am start -W -n ${PKG}/.MainActivity`);
+	return attach();
+}
+
+/** The app's current WebView page. Re-attaches when Android replaced the
+ * DevTools target (e.g. the activity was recreated). */
+async function attach() {
 	const webview = await device.webView({ pkg: PKG }, { timeout: 60_000 });
-	return webview.page();
+	const page = await webview.page();
+	page.on("close", () => console.log("  (WebView page target closed)"));
+	page.on("framenavigated", (f) => {
+		if (f === page.mainFrame()) console.log(`  (navigated: ${f.url()})`);
+	});
+	return page;
+}
+
+/** Run a page action; if the target went away, re-attach once and retry. */
+async function withPage(label, fn) {
+	try {
+		return await fn(page);
+	} catch (err) {
+		if (!/closed|detached|Target/i.test(String(err?.message))) throw err;
+		console.log(`  (re-attaching after "${String(err.message).split("\n")[0]}" during ${label})`);
+		const views = await device.webViews();
+		console.log(`  (webviews: ${views.map((v) => `${v.pkg()}#${v.pid()}`).join(", ") || "none"})`);
+		page = await attach();
+		return fn(page);
+	}
+}
+
+async function dumpLogcat() {
+	const log = (await device.shell("logcat -d -t 400").catch(() => Buffer.from(""))).toString();
+	const lines = log.split("\n").filter((l) => /Capacitor|chromium|AndroidRuntime|ActivityTaskManager|ActivityManager.*learnharness|cr_|WebView|FATAL/i.test(l));
+	console.log("---- logcat (filtered, last 80) ----");
+	console.log(lines.slice(-80).join("\n"));
+	console.log("------------------------------------");
 }
 
 async function currentUrl(page) {
@@ -64,17 +98,22 @@ async function waitForUrl(page, predicate, timeout = 30_000) {
 	return url;
 }
 
+let page;
 try {
 	// 1. First launch: the connect screen.
-	let page = await launch();
+	page = await launch();
 	await page.waitForSelector("#form", { state: "visible", timeout: 30_000 });
 	check((await currentUrl(page)).startsWith("https://localhost/"), "first launch shows the local connect screen", await currentUrl(page));
 	await shot("01-connect");
 
 	// 2. Validation, then connect + pair.
-	await page.fill("#url", SERVER.replace(/^http:\/\//, ""));
-	await page.fill("#code", "short");
-	await page.click("button[type=submit]");
+	await sleep(3000); // let the first load settle
+	await withPage("fill form", async (p) => {
+		await p.waitForSelector("#form", { state: "visible", timeout: 30_000 });
+		await p.fill("#url", SERVER.replace(/^http:\/\//, ""));
+		await p.fill("#code", "short");
+		await p.click("button[type=submit]");
+	});
 	check((await page.textContent("#error"))?.includes("access code"), "short code is rejected on the phone");
 	await page.fill("#code", CODE.toLowerCase());
 	await page.click("button[type=submit]");
@@ -165,6 +204,7 @@ try {
 	console.log(`FAIL: smoke test crashed — ${err?.stack ?? err}`);
 	await shot("99-crash");
 } finally {
+	if (failures > 0) await dumpLogcat();
 	await device.close().catch(() => {});
 }
 

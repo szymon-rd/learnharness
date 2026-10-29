@@ -5,6 +5,7 @@
  *
  *   npm run phone                 build if needed, then serve
  *   npm run phone -- --build      force a fresh production build first
+ *                                 (it also rebuilds by itself after the checkout changes)
  *   npm run phone -- --port 4000  listen on another port (default 3210)
  *   npm run phone -- --new-code   replace the access code (unpairs every device)
  *   npm run phone -- --repo-data  use the repo's data/ + auth.json (dev data)
@@ -81,7 +82,12 @@ if (process.env.LH_DATA_DIR) {
 	authFile = path.resolve(process.env.LH_AUTH_FILE ?? path.join(dataDir, "..", "auth.json"));
 	codeFile = path.join(dataDir, "..", "phone-access-code");
 } else if (!flag("--repo-data") && fs.existsSync(path.join(userData, "data"))) {
-	if (desktopAppRunning(userData)) fail("The LearnHarness desktop app is running. Quit it first: both would write the same data.");
+	if (desktopAppRunning(userData)) {
+		fail(
+			"The LearnHarness desktop app is running. Quit it first: both would write the same data.\n" +
+				`  (If it is not running, delete the stale lock: ${path.join(userData, "SingletonLock")})`,
+		);
+	}
 	dataDir = path.join(userData, "data");
 	authFile = path.join(userData, "auth.json");
 	codeFile = path.join(userData, "phone-access-code");
@@ -109,10 +115,20 @@ if (code.replace(/-/g, "").length < 16) {
 const nextBin = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
 if (!fs.existsSync(nextBin)) fail("Dependencies are missing. Run `npm install` first.");
 
-if (flag("--build") || !fs.existsSync(path.join(ROOT, ".next", "BUILD_ID"))) {
-	console.log("Building LearnHarness (first run takes a few minutes)…");
+// Rebuild when there is no build yet, or the checkout moved since the last
+// one (e.g. after `git pull`), so the phone never runs stale code.
+const BUILT_AT = path.join(ROOT, ".next", "phone-build-head");
+const head = (() => {
+	const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd: ROOT, encoding: "utf8" });
+	return r.status === 0 ? r.stdout.trim() : "";
+})();
+const builtHead = fs.existsSync(BUILT_AT) ? fs.readFileSync(BUILT_AT, "utf8").trim() : "";
+const stale = head !== "" && builtHead !== head;
+if (flag("--build") || !fs.existsSync(path.join(ROOT, ".next", "BUILD_ID")) || stale) {
+	console.log("Building LearnHarness (takes a few minutes)…");
 	const build = spawnSync(process.execPath, [nextBin, "build"], { cwd: ROOT, stdio: "inherit", env: { ...process.env, NODE_ENV: "production" } });
 	if (build.status !== 0) fail("The build failed (see above).");
+	if (head) fs.writeFileSync(BUILT_AT, `${head}\n`);
 }
 
 function addresses() {

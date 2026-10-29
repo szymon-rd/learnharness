@@ -101,15 +101,14 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - run: npm ci
-      - run: npx next build
-      - name: Start the phone server with the sample data
+      - name: Start the phone server with the sample data (builds first)
         run: |
           mkdir -p "$RUNNER_TEMP/lh"
           cp -r tests/fixtures/golden-data "$RUNNER_TEMP/lh/data"
           echo "$LH_SMOKE_CODE" > "$RUNNER_TEMP/lh/phone-access-code"
           LH_DATA_DIR="$RUNNER_TEMP/lh/data" LH_AUTH_FILE="$RUNNER_TEMP/lh/auth.json" \
             nohup node scripts/phone-server.mjs --port 3210 > "$RUNNER_TEMP/phone.log" 2>&1 &
-          for i in $(seq 1 60); do curl -sf -o /dev/null http://127.0.0.1:3210/pair && break; sleep 2; done
+          for i in $(seq 1 150); do curl -sf -o /dev/null http://127.0.0.1:3210/pair && break; sleep 2; done
           cat "$RUNNER_TEMP/phone.log"
           test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3210/api/graph)" = 401
       - uses: actions/download-artifact@v5
