@@ -40,10 +40,11 @@ function page(error: string | null, status: number): Response {
 	input { width: 100%; box-sizing: border-box; padding: 14px; border-radius: 12px; border: 1px solid #3a3a3a; background: #1e1e1e; color: inherit; font: inherit; font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; }
 	button { margin-top: 12px; width: 100%; padding: 14px; border: 0; border-radius: 12px; background: #e8e8e8; color: #161616; font: inherit; font-weight: 600; }
 	.error { color: #ff8a80; }
+	code { color: #e8e8e8; overflow-wrap: anywhere; }
 </style></head>
 <body><main>
 	<h1>Pair this device</h1>
-	<p>Enter the access code shown in the terminal where the LearnHarness phone server is running.</p>
+	<p>Enter the access code for this server. On a VPS, <code>docker compose exec learnharness cat /data/phone-access-code</code> shows it; on a computer, <code>npm run phone</code> prints it.</p>
 	${message}
 	<form method="post" action="/pair">
 		<input name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" required autofocus>
