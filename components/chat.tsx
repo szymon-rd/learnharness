@@ -749,6 +749,17 @@ export function Chat({
 	 * kind, nothing active, nothing in flight, and at least one problem
 	 * has ever been posed (the fresh session's opening turn is owed, not
 	 * the move-on). Enter-on-empty and the Next chip both key on it. */
+	// Touch screens have no Enter-on-empty habit (and soft keyboards hide
+	// until focus), so the practice pause hint names the button instead.
+	const [coarsePointer, setCoarsePointer] = useState(false);
+	useEffect(() => {
+		const query = window.matchMedia?.("(pointer: coarse)");
+		if (!query) return;
+		setCoarsePointer(query.matches);
+		const onChange = () => setCoarsePointer(query.matches);
+		query.addEventListener?.("change", onChange);
+		return () => query.removeEventListener?.("change", onChange);
+	}, []);
 	const nextReady =
 		kind === "practice" &&
 		!pending &&
@@ -1804,7 +1815,7 @@ export function Chat({
 							// applies.
 							nextProblem={nextReady}
 							onNext={sendNext}
-							placeholder={nextReady ? "Ask anything, or press Enter for the next one." : undefined}
+							placeholder={nextReady ? (coarsePointer ? "Ask anything, or tap Next problem." : "Ask anything, or press Enter for the next one.") : undefined}
 						/>
 					}
 					onSubmitAnswer={(output) => {
