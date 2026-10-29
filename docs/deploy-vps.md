@@ -50,6 +50,29 @@ Then:
 
 To check it from a browser instead, open `https://<LH_HOST>`, enter the code, and LearnHarness loads.
 
+## Deploy with GitHub Actions (alternative)
+
+Instead of running the steps above on the server, the **Deploy to VPS** workflow (`.github/workflows/deploy-vps.yml`) can do it over SSH: it installs Docker if needed, copies the current commit to `/opt/learnharness`, writes `deploy/.env`, builds, starts, and checks the HTTPS address.
+
+One-time setup:
+
+1. Make an SSH key pair for deploys (`ssh-keygen -t ed25519 -N "" -f lh_deploy`) and add the public key to the server: `echo '<contents of lh_deploy.pub>' >> /root/.ssh/authorized_keys`.
+2. In the repository on GitHub: **Settings → Secrets and variables → Actions → New repository secret**:
+   - `VPS_HOST`: the server's IPv4 address.
+   - `VPS_SSH_KEY`: the private key, as one line of base64 (`base64 -w0 lh_deploy`) or as the file's text.
+   - `VPS_DOMAIN` (optional): your own hostname; without it the address is `<VPS_HOST>.sslip.io`.
+
+Then **Actions → Deploy to VPS → Run workflow**, with the task:
+
+| Task | What it does |
+|---|---|
+| `deploy` | copy this commit to the server, build, (re)start, check HTTPS |
+| `status` | running containers, deployed commit, disk and memory |
+| `logs` | last 200 log lines of the app and Caddy |
+| `access-code` | print the phone access code in the run's log |
+
+The data stays in the Docker volumes across deploys. Anyone who can run workflows in the repository can control the server through this key; remove the key line from `authorized_keys` to revoke it.
+
 ## Day to day
 
 | Task | Command (in `deploy/`) |
