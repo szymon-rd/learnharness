@@ -230,8 +230,15 @@ try {
 		await p.fill("#url", SERVER);
 		await p.click("button[type=submit]");
 	});
-	url = await waitForUrl(page, (u) => u === `${SERVER}/`);
-	check(url === `${SERVER}/`, "change server from the error page", url);
+	// The page switches origin here, which can leave DevTools without a page
+	// to re-attach to; check from the outside instead.
+	await sleep(5000);
+	const top = (await device.shell("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3")).toString().trim();
+	check(top.includes(PKG), "the server opens inside the app (no external browser)", top.split("\n")[0]);
+	page = await launch();
+	url = await waitForUrl(null, (u) => u === `${SERVER}/`);
+	check(url === `${SERVER}/`, "changed server is saved and reconnects after restart", url);
+	await shot("08-changed-server");
 } catch (err) {
 	failures++;
 	console.log(`FAIL: smoke test crashed — ${err?.stack ?? err}`);
