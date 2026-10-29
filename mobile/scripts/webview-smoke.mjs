@@ -265,12 +265,20 @@ try {
 	check(loadedInApp, "the server loads inside the app's WebView after changing it");
 	const top = (await device.shell("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3")).toString().trim();
 	check(top.includes(PKG), "the app stays in front (no external browser)", top.split("\n")[0]);
-	const relaunchedAt = Date.now();
-	page = await launch();
-	url = await waitForUrl(null, (u) => u === `${SERVER}/`, 15_000);
-	// DevTools can lose the page right after a relaunch; the recorded
-	// navigations still show where the app went.
-	const sawServer = navigations.some((n) => n.at >= relaunchedAt && n.url === `${SERVER}/`);
+	// DevTools sometimes fails to attach right after a relaunch, so give the
+	// relaunch two tries; the recorded navigations count as evidence too.
+	let sawServer = false;
+	url = "";
+	for (let attempt = 1; attempt <= 2 && !sawServer && url !== `${SERVER}/`; attempt++) {
+		const relaunchedAt = Date.now();
+		try {
+			page = await launch();
+			url = await waitForUrl(null, (u) => u === `${SERVER}/`, 15_000);
+		} catch (err) {
+			console.log(`  (relaunch attempt ${attempt}: ${String(err?.message).split("\n")[0]})`);
+		}
+		sawServer = navigations.some((n) => n.at >= relaunchedAt && n.url === `${SERVER}/`);
+	}
 	check(url === `${SERVER}/` || sawServer, "changed server is saved and reconnects after restart", url === `${SERVER}/` ? url : `navigation log: ${sawServer ? SERVER + "/" : "none"}`);
 	await shot("08-changed-server");
 } catch (err) {
