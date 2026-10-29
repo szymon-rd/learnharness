@@ -46,21 +46,14 @@ public class ServerLinkPlugin extends Plugin {
             return null;
         }
         Uri server = Uri.parse(saved);
-        boolean sameOrigin =
-            equalsIgnoreCase(server.getScheme(), url.getScheme()) &&
-            equalsIgnoreCase(server.getHost(), url.getHost()) &&
-            port(server) == port(url);
-        return sameOrigin ? Boolean.FALSE : null;
+        // Same host, any scheme or port: the server may redirect http → https
+        // (Caddy does), and that must stay inside the app.
+        boolean web = "http".equalsIgnoreCase(url.getScheme()) || "https".equalsIgnoreCase(url.getScheme());
+        boolean sameHost = web && equalsIgnoreCase(server.getHost(), url.getHost());
+        return sameHost ? Boolean.FALSE : null;
     }
 
     private static boolean equalsIgnoreCase(String a, String b) {
         return a != null && a.equalsIgnoreCase(b);
-    }
-
-    private static int port(Uri uri) {
-        if (uri.getPort() != -1) {
-            return uri.getPort();
-        }
-        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
     }
 }

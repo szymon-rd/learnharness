@@ -10,16 +10,16 @@
 <body>
 	<main id="connect" hidden>
 		<h1>LearnHarness</h1>
-		<p class="lead">Connect to the LearnHarness phone server running on your computer.</p>
+		<p class="lead">Connect to your LearnHarness server.</p>
 		<form id="form" novalidate>
 			<label for="url">Server address</label>
-			<input id="url" name="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="http://192.168.1.20:3210" required>
+			<input id="url" name="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://lh.example.com" required>
 			<label for="code">Access code</label>
 			<input id="code" name="code" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX-XXXX" required>
 			<p id="error" class="error" hidden></p>
 			<button type="submit">Connect</button>
 		</form>
-		<p class="hint">On your computer, run <code>npm run phone</code> in the LearnHarness folder. It prints the address and the access code.</p>
+		<p class="hint">On a VPS: the address is <code>https://</code> plus your host name, and <code>docker compose exec learnharness cat /data/phone-access-code</code> shows the code. On your computer: <code>npm run phone</code> prints both.</p>
 	</main>
 	<script src="connect.js"></script>
 	<script>

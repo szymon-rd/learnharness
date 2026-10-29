@@ -1,0 +1,5 @@
+# HTTPS certificate for LH_HOST from Let's Encrypt, renewed automatically.
+# No response compression: it would hold back the live (streamed) replies.
+{$LH_HOST} {
+	reverse_proxy learnharness:3210
+}

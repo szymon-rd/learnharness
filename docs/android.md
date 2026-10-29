@@ -1,13 +1,16 @@
 # LearnHarness on Android
 
-The Android app is a window onto LearnHarness running on your computer. Your computer does the work: agent turns, the knowledge graph, your API keys and data all stay there. The phone shows the same interface, adapted to a small touch screen, over your network.
+The Android app is a window onto a LearnHarness server. The server does the work: agent turns, the knowledge graph, your API keys and data all live there. The phone shows the same interface, adapted to a small touch screen.
+
+The server can run in one of two places:
+
+- **Your own VPS (recommended):** works from anywhere, with HTTPS (so dictation works), and no computer has to stay on. Set it up with [docs/deploy-vps.md](deploy-vps.md), then skip to step 2 below and use `https://<your host>` as the server address.
+- **Your computer:** `npm run phone`, as in step 1 below. The computer has to be on, awake and reachable while you use the phone.
 
 ```
- Android app (WebView)  ──Wi-Fi / Tailscale──▶  npm run phone  (your computer)
-   connect screen                                 LearnHarness server + your data
+ Android app (WebView)  ──HTTPS / Wi-Fi──▶  LearnHarness server (VPS or your computer)
+   connect screen                            your sessions, graph and keys
 ```
-
-So the computer has to be on, awake and running `npm run phone` while you use the phone.
 
 ## 1. Start the phone server on your computer
 

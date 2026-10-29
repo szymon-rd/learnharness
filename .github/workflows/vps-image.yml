@@ -1,0 +1,76 @@
+name: VPS image
+
+# Builds the server image from deploy/docker-compose.yml and checks it end to
+# end behind Caddy (HTTPS on localhost with Caddy's internal CA): pairing,
+# API access, streaming, and Chromium for demos. See docs/deploy-vps.md.
+on:
+  push:
+    paths:
+      - "Dockerfile"
+      - ".dockerignore"
+      - "deploy/**"
+      - "scripts/phone-server.mjs"
+      - "proxy.ts"
+      - "app/pair/**"
+      - "src/server/remote-access.ts"
+      - ".github/workflows/vps-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose:
+    name: Build and check the Compose stack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: deploy
+    env:
+      LH_HOST: localhost
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and start
+        run: docker compose up -d --build
+      - name: Wait for HTTPS
+        run: |
+          for i in $(seq 1 90); do
+            [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/pair)" = 200 ] && break
+            sleep 2
+          done
+          docker compose logs learnharness | tail -20
+      - name: Pairing, API and streaming through Caddy
+        run: |
+          set -e
+          CODE=$(docker compose exec -T learnharness cat /data/phone-access-code | tr -d '\r\n')
+          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/api/graph)" = 401
+          curl -sk https://localhost/chat/new | grep -q "Pair this device"
+          HEADERS=$(curl -sk -D - -o /dev/null "https://localhost/pair?code=$CODE")
+          echo "$HEADERS" | grep -i "set-cookie: lh_remote=.*Secure"
+          COOKIE=$(echo "$HEADERS" | grep -i set-cookie | sed 's/.*lh_remote=\([^;]*\).*/\1/' | tr -d '\r')
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -b "lh_remote=$COOKIE" https://localhost/)" = 200
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -b "lh_remote=$COOKIE" https://localhost/api/graph/status)" = 200
+          # The events stream sends a keep-alive every 25 s; it must arrive through Caddy.
+          timeout 35 curl -sk -N -b "lh_remote=$COOKIE" https://localhost/api/events > events.txt || true
+          grep -q ": ping" events.txt
+      - name: Chromium starts for demos
+        run: |
+          docker compose exec -T learnharness node -e '
+            import("puppeteer-core").then(async ({ default: p }) => {
+              const b = await p.launch({ executablePath: process.env.CHROME_PATH, headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"] });
+              const page = await b.newPage();
+              await page.setContent("<p id=x>ok</p>");
+              console.log("chromium", await b.version(), await page.$eval("#x", (e) => e.textContent));
+              await b.close();
+            });'
+      - name: Data survives a restart
+        run: |
+          CODE1=$(docker compose exec -T learnharness cat /data/phone-access-code)
+          docker compose restart learnharness
+          sleep 5
+          CODE2=$(docker compose exec -T learnharness cat /data/phone-access-code)
+          test "$CODE1" = "$CODE2"
+      - name: Logs
+        if: always()
+        run: docker compose logs --tail 60

@@ -36,11 +36,17 @@
 		}
 	}
 
-	/** "192.168.1.20:3210" → "http://192.168.1.20:3210"; returns the origin or null. */
+	/** Adds a scheme when missing and returns the origin, or null.
+	 *  "lh.example.com" → "https://lh.example.com" (a VPS behind Caddy);
+	 *  "192.168.1.20:3210", "localhost:3210" → "http://…" (npm run phone). */
 	function normalizeUrl(raw) {
 		var text = String(raw || "").trim();
 		if (!text) return null;
-		if (!/^https?:\/\//i.test(text)) text = "http://" + text;
+		if (!/^https?:\/\//i.test(text)) {
+			var host = text.split("/")[0];
+			var plain = /:\d+$/.test(host) || /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || /^localhost$/i.test(host);
+			text = (plain ? "http://" : "https://") + text;
+		}
 		try {
 			var url = new URL(text);
 			if (url.protocol !== "http:" && url.protocol !== "https:") return null;
@@ -101,7 +107,7 @@
 			var url = normalizeUrl(urlInput.value);
 			var code = normalizeCode(codeInput.value);
 			if (!url) {
-				error.textContent = "Enter the server address, for example http://192.168.1.20:3210";
+				error.textContent = "Enter the server address, for example https://lh.example.com";
 				error.hidden = false;
 				urlInput.focus();
 				return;

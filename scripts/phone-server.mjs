@@ -164,14 +164,19 @@ function announce() {
 	console.log(`\n${line}\n LearnHarness phone server is running\n${line}`);
 	console.log(` Access code:  ${code}\n`);
 	console.log(" Server address for the Android app:");
-	for (const ip of lan) console.log(`   http://${ip}:${PORT}      (same Wi-Fi)`);
-	for (const ip of tailnet) console.log(`   http://${ip}:${PORT}      (Tailscale)`);
-	if (lan.length === 0 && tailnet.length === 0) console.log(`   http://<this computer's IP>:${PORT}`);
-	console.log("\n Dictation needs HTTPS. With Tailscale, run:");
-	console.log(`   tailscale serve --bg ${PORT}`);
-	console.log("   and use the https://<machine>.<tailnet>.ts.net address it prints.");
+	if (process.env.LH_PUBLIC_URL) {
+		// Behind a reverse proxy (deploy/docker-compose.yml): the public HTTPS address.
+		console.log(`   ${process.env.LH_PUBLIC_URL}`);
+	} else {
+		for (const ip of lan) console.log(`   http://${ip}:${PORT}      (same Wi-Fi)`);
+		for (const ip of tailnet) console.log(`   http://${ip}:${PORT}      (Tailscale)`);
+		if (lan.length === 0 && tailnet.length === 0) console.log(`   http://<this computer's IP>:${PORT}`);
+		console.log("\n Dictation needs HTTPS. With Tailscale, run:");
+		console.log(`   tailscale serve --bg ${PORT}`);
+		console.log("   and use the https://<machine>.<tailnet>.ts.net address it prints.");
+	}
 	console.log(`\n Data: ${dataDir}`);
-	console.log(" Keep the desktop app closed while this runs. Ctrl+C to stop.");
+	if (!process.env.LH_PUBLIC_URL) console.log(" Keep the desktop app closed while this runs. Ctrl+C to stop.");
 	console.log(`${line}\n`);
 }
 // `next start` warns about output: "standalone" (set for the desktop

@@ -10,11 +10,11 @@
 <body>
 	<main>
 		<h1>Can't load LearnHarness</h1>
-		<p class="lead">The server at <strong id="server">your computer</strong> did not answer, or returned an error.</p>
+		<p class="lead">The server at <strong id="server">your server</strong> did not answer, or returned an error.</p>
 		<ul class="checks">
-			<li>Is <code>npm run phone</code> still running on your computer?</li>
-			<li>Is the phone on the same Wi-Fi (or Tailscale) as the computer?</li>
-			<li>Did the computer go to sleep?</li>
+			<li>Is the phone online?</li>
+			<li>VPS: is the server up (<code>docker compose ps</code>)?</li>
+			<li>Computer: is <code>npm run phone</code> still running, awake, and on the same Wi-Fi?</li>
 		</ul>
 		<button id="retry" type="button">Try again</button>
 		<button id="change" type="button" class="secondary">Change server</button>
