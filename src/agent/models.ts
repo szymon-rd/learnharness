@@ -62,6 +62,13 @@ export function piModels() {
 	if (!collection) {
 		collection = createModels({ identity: APP_IDENTITY });
 		for (const provider of builtinProviders()) collection.setProvider(provider);
+		// End-to-end test seam (tests/e2e/server.mjs): scripted pi-ai
+		// providers installed on globalThis before the server starts replace
+		// builtin ones with the same id. Inert unless LH_TEST_PROVIDERS=1.
+		if (process.env.LH_TEST_PROVIDERS === "1") {
+			const extra = (globalThis as { __lhTestProviders?: Parameters<typeof collection.setProvider>[0][] }).__lhTestProviders;
+			for (const provider of extra ?? []) collection.setProvider(provider);
+		}
 	}
 	return collection;
 }
