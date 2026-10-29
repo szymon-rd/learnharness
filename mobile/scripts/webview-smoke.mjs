@@ -336,6 +336,12 @@ try {
 		await sleep(4000);
 		const topAfterCrash = (await adbShell("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3")).toString().trim();
 		check(topAfterCrash.includes(PKG), "renderer crash: the app stays open", topAfterCrash.split("\n")[0]);
+		if (!topAfterCrash.includes(PKG)) {
+			const crashLog = (await adbShell("logcat -d -t 300")).toString().split("\n");
+			console.log("---- logcat after the renderer crash ----");
+			console.log(crashLog.filter((l) => /LearnHarness|AndroidRuntime|FATAL|Capacitor|ActivityManager|ActivityTaskManager|chromium|cr_/i.test(l)).slice(-60).join("\n"));
+			console.log("-----------------------------------------");
+		}
 		page = null;
 		url = await waitForUrl(null, (u) => u === `${SERVER}/` || u.startsWith("https://localhost/"), 30_000);
 		if (url.startsWith("https://localhost/")) {

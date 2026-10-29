@@ -2,6 +2,7 @@ package ai.learnharness.android;
 
 import android.os.Bundle;
 import android.util.Log;
+import android.view.ViewGroup;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
@@ -29,6 +30,12 @@ public class MainActivity extends BridgeActivity {
                 @Override
                 public boolean onRenderProcessGone(WebView webView, RenderProcessGoneDetail detail) {
                     Log.w("LearnHarness", "WebView renderer gone; restarting the screen");
+                    // Android requires a WebView whose renderer is gone to be
+                    // taken off the screen and destroyed before anything else
+                    // touches it.
+                    ViewGroup parent = (ViewGroup) webView.getParent();
+                    if (parent != null) parent.removeView(webView);
+                    webView.destroy();
                     recreate();
                     return true;
                 }
