@@ -137,16 +137,6 @@ jobs:
       - name: Phone server log
         if: always()
         run: tail -50 "$RUNNER_TEMP/phone.log" || true
-      - name: Screenshots in the log (small JPEGs, base64)
-        if: always()
-        run: |
-          for f in mobile/smoke-shots/*.png; do
-            [ -f "$f" ] || continue
-            echo "LH-SHOT-BEGIN $(basename "$f")"
-            convert "$f" -resize 320x -quality 55 jpg:- | base64 -w0
-            echo
-            echo "LH-SHOT-END"
-          done
       - uses: actions/upload-artifact@v5
         if: always()
         with:
