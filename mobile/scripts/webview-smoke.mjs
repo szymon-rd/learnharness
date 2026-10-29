@@ -23,6 +23,8 @@ const PRACTICE = "chat_mv293wv5_10656952";
 fs.mkdirSync(shots, { recursive: true });
 
 let failures = 0;
+/** Every main-frame navigation the test saw, across page re-attaches. */
+const navigations = [];
 let currentStep = "start";
 const stepStarted = Date.now();
 function step(name) {
@@ -73,7 +75,10 @@ async function attach() {
 	}
 	page.on("close", () => console.log("  (WebView page target closed)"));
 	page.on("framenavigated", (f) => {
-		if (f === page.mainFrame()) console.log(`  (navigated: ${f.url()})`);
+		if (f === page.mainFrame()) {
+			navigations.push({ at: Date.now(), url: f.url() });
+			console.log(`  (navigated: ${f.url()})`);
+		}
 	});
 	return page;
 }
@@ -254,9 +259,13 @@ try {
 	await sleep(5000);
 	const top = (await device.shell("dumpsys activity activities | grep -E 'topResumedActivity|ResumedActivity' | head -3")).toString().trim();
 	check(top.includes(PKG), "the server opens inside the app (no external browser)", top.split("\n")[0]);
+	const relaunchedAt = Date.now();
 	page = await launch();
-	url = await waitForUrl(null, (u) => u === `${SERVER}/`);
-	check(url === `${SERVER}/`, "changed server is saved and reconnects after restart", url);
+	url = await waitForUrl(null, (u) => u === `${SERVER}/`, 15_000);
+	// DevTools can lose the page right after a relaunch; the recorded
+	// navigations still show where the app went.
+	const sawServer = navigations.some((n) => n.at >= relaunchedAt && n.url === `${SERVER}/`);
+	check(url === `${SERVER}/` || sawServer, "changed server is saved and reconnects after restart", url === `${SERVER}/` ? url : `navigation log: ${sawServer ? SERVER + "/" : "none"}`);
 	await shot("08-changed-server");
 } catch (err) {
 	failures++;
