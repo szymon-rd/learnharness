@@ -53,7 +53,12 @@ async function launch() {
  * DevTools target (e.g. the activity was recreated). */
 async function attach() {
 	const webview = await device.webView({ pkg: PKG }, { timeout: 60_000 });
-	const page = await webview.page();
+	let page = await webview.page();
+	if (page.isClosed()) {
+		// Same app process, new renderer: pick up the replacement target.
+		const context = page.context();
+		page = context.pages().find((p) => !p.isClosed()) ?? (await context.waitForEvent("page", { timeout: 15_000 }));
+	}
 	page.on("close", () => console.log("  (WebView page target closed)"));
 	page.on("framenavigated", (f) => {
 		if (f === page.mainFrame()) console.log(`  (navigated: ${f.url()})`);
@@ -201,8 +206,11 @@ try {
 	await shot("06-restart");
 
 	// 7. Unreachable server → the app's error page, with a way back.
-	await device.shell("input keyevent 4");
-	await sleep(3000);
+	// Fresh app data, so the connect form opens directly.
+	await device.shell(`am force-stop ${PKG}`);
+	await device.shell(`pm clear ${PKG}`);
+	page = await launch();
+	await sleep(2000);
 	const deadServer = SERVER.replace(/:(\d+)$/, ":3999");
 	await withPage("open the connect form", async (p) => {
 		await p.waitForSelector("#form", { state: "visible", timeout: 15_000 });
