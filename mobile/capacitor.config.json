@@ -1,0 +1,21 @@
+{
+	"appId": "ai.learnharness.android",
+	"appName": "LearnHarness",
+	"webDir": "www",
+	"backgroundColor": "#141414",
+	"server": {
+		"androidScheme": "https",
+		"errorPath": "error.html"
+	},
+	"android": {
+		"allowMixedContent": false,
+		"captureInput": false,
+		"webContentsDebuggingEnabled": true
+	},
+	"plugins": {
+		"SystemBars": {
+			"insetsHandling": "css",
+			"style": "DARK"
+		}
+	}
+}

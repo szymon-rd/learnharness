@@ -45,3 +45,5 @@ export * from "./observability.ts";
 export * from "./model-catalog.ts";
 export { subscriptionControlsResponse, subscriptionBrowserResponse } from "./web-subscription-http.ts";
 export { sessionCost } from "./pricing.ts";
+// Phone access (remote mode): the /pair route checks codes and mints the cookie.
+export { PAIR_PATH, REMOTE_COOKIE, accessCodeMatches, remoteAccessMode, remoteCookieValue } from "./remote-access.ts";

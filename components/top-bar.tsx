@@ -53,7 +53,9 @@ export function TopBar({
 	return (
 		<header
 			onMouseDown={onMouseDown}
-			className={`${drag ? "lh-drag " : ""}lh-wco-gutter flex h-15 select-none items-center gap-3 border-b border-border px-3`}
+			// Phone: tighter rhythm, and the bar grows by the top safe-area
+			// inset on edge-to-edge devices (zero elsewhere).
+			className={`${drag ? "lh-drag " : ""}lh-wco-gutter flex h-15 select-none items-center gap-3 border-b border-border px-3 max-sm:h-[calc(3.75rem+env(safe-area-inset-top))] max-sm:gap-2 max-sm:px-2 max-sm:pt-[env(safe-area-inset-top)]`}
 		>
 			<SidebarToggle />
 			{children}

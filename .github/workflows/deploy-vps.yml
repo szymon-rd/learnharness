@@ -1,0 +1,142 @@
+name: Deploy to VPS
+
+# Deploys the chosen branch (main by default) to your own server over SSH and runs it there with
+# deploy/docker-compose.yml (the app plus Caddy for HTTPS). Run it from the
+# Actions tab (Run workflow) and pick a task:
+#   deploy       copy this commit to the server, build and (re)start it
+#   status       show the running containers and check the HTTPS address
+#   logs         the last 200 log lines of the app and Caddy
+#   access-code  print the phone access code (shown in this run's log)
+#
+# One-time setup (docs/deploy-vps.md, "Deploy with GitHub Actions"):
+#   secret VPS_HOST     the server's IPv4 address
+#   secret VPS_SSH_KEY  base64 of a private SSH key whose public key is in
+#                       /root/.ssh/authorized_keys on the server
+#   secret VPS_DOMAIN   optional; default <VPS_HOST>.sslip.io
+# Learning data lives in a Docker volume on the server and survives deploys.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: What to do
+        type: choice
+        options: [deploy, status, logs, access-code]
+        default: deploy
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: VPS
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_DOMAIN: ${{ secrets.VPS_DOMAIN }}
+      APP_DIR: /opt/learnharness
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Pick the task
+        env:
+          INPUT_TASK: ${{ inputs.task }}
+        run: |
+          task="$INPUT_TASK"
+          case "$task" in
+            deploy|status|logs|access-code) ;;
+            *) echo "::error::unknown task '$task' (deploy, status, logs or access-code)"; exit 1 ;;
+          esac
+          echo "TASK=$task" >> "$GITHUB_ENV"
+          echo "task: $task"
+
+      - name: SSH setup
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          if [ -z "$VPS_HOST" ] || [ -z "$VPS_SSH_KEY" ]; then
+            echo "::error::Add the VPS_HOST and VPS_SSH_KEY secrets (Settings → Secrets and variables → Actions). See docs/deploy-vps.md."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          # Accept base64 (one line, easy to paste on a phone) or the raw key.
+          if printf '%s' "$VPS_SSH_KEY" | grep -q "BEGIN OPENSSH PRIVATE KEY"; then
+            printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
+          else
+            printf '%s' "$VPS_SSH_KEY" | tr -d ' \r\n' | base64 -d > ~/.ssh/id_ed25519
+          fi
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          echo "LH_HOST=${VPS_DOMAIN:-$VPS_HOST.sslip.io}" >> "$GITHUB_ENV"
+          ssh -o BatchMode=yes -o ConnectTimeout=20 "root@$VPS_HOST" 'echo "connected to $(hostname) ($(. /etc/os-release; echo $PRETTY_NAME), $(nproc) CPU, $(free -m | awk "/Mem:/{print \$2}") MB RAM, $(df -h / | awk "NR==2{print \$4}") free)"'
+
+      - name: Install Docker (first deploy only)
+        if: env.TASK == 'deploy'
+        run: |
+          ssh -o BatchMode=yes "root@$VPS_HOST" 'command -v docker >/dev/null && docker compose version >/dev/null 2>&1 && echo "Docker present: $(docker --version)" || (curl -fsSL https://get.docker.com | sh)'
+
+      - name: Copy this commit to the server
+        if: env.TASK == 'deploy'
+        run: |
+          # A fresh copy each time (files deleted in git disappear on the server
+          # too); the data is in Docker volumes, not in this folder.
+          git archive --format=tar HEAD | ssh -o BatchMode=yes "root@$VPS_HOST" "
+            set -e
+            rm -rf $APP_DIR.new && mkdir -p $APP_DIR.new
+            tar -x -C $APP_DIR.new
+            rm -rf $APP_DIR.old
+            if [ -d $APP_DIR ]; then mv $APP_DIR $APP_DIR.old; fi
+            mv $APP_DIR.new $APP_DIR
+            printf 'LH_HOST=%s\n' '$LH_HOST' > $APP_DIR/deploy/.env
+            echo '${{ github.sha }}' > $APP_DIR/DEPLOYED_COMMIT
+          "
+
+      - name: Build and start
+        if: env.TASK == 'deploy'
+        run: |
+          ssh -o BatchMode=yes -o ServerAliveInterval=30 "root@$VPS_HOST" "
+            set -e
+            cd $APP_DIR/deploy
+            docker compose up -d --build --remove-orphans
+            docker image prune -f >/dev/null
+            docker builder prune -f --filter until=168h >/dev/null
+            docker compose ps
+          "
+
+      - name: Check the HTTPS address
+        if: env.TASK == 'deploy' || env.TASK == 'status'
+        run: |
+          # The first deploy waits for Let's Encrypt to issue the certificate.
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://$LH_HOST/pair" || true)
+            [ "$code" = 200 ] && break
+            sleep 5
+          done
+          echo "https://$LH_HOST/pair → HTTP $code"
+          if [ "$code" != 200 ]; then
+            ssh -o BatchMode=yes "root@$VPS_HOST" "cd $APP_DIR/deploy && docker compose ps && docker compose logs --tail 40"
+            echo "::error::https://$LH_HOST did not answer. If ports 80/443 are blocked by a Hetzner Cloud Firewall, allow them."
+            exit 1
+          fi
+          # Unpaired API requests must be refused.
+          test "$(curl -s -o /dev/null -w '%{http_code}' "https://$LH_HOST/api/graph")" = 401
+          echo "### LearnHarness is up at https://$LH_HOST" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Status
+        if: env.TASK == 'status'
+        run: |
+          ssh -o BatchMode=yes "root@$VPS_HOST" "cd $APP_DIR/deploy && echo deployed commit: \$(cat $APP_DIR/DEPLOYED_COMMIT 2>/dev/null) && docker compose ps && df -h / && free -m"
+
+      - name: Logs
+        if: env.TASK == 'logs'
+        run: |
+          ssh -o BatchMode=yes "root@$VPS_HOST" "cd $APP_DIR/deploy && docker compose logs --tail 200 --no-color"
+
+      - name: Access code
+        if: env.TASK == 'access-code'
+        run: |
+          ssh -o BatchMode=yes "root@$VPS_HOST" "cd $APP_DIR/deploy && docker compose exec -T learnharness cat /data/phone-access-code"

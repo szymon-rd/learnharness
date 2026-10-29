@@ -1,0 +1,135 @@
+:root {
+	color-scheme: dark;
+	--background: #141414;
+	--card: #1c1c1c;
+	--foreground: #e6e6e6;
+	--muted: #a0a0a0;
+	--border: #434343;
+	--error: #ff8a80;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	min-height: 100dvh;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--background);
+	color: var(--foreground);
+	font: 16px/1.5 ui-monospace, "JetBrains Mono", "Roboto Mono", monospace;
+}
+
+main {
+	width: 100%;
+	max-width: 420px;
+	padding: 24px 16px;
+}
+
+h1 {
+	margin: 0 0 8px;
+	font-size: 22px;
+	font-weight: 600;
+}
+
+.lead {
+	margin: 0 0 24px;
+	color: var(--muted);
+	font-size: 14px;
+}
+
+label {
+	display: block;
+	margin: 16px 0 6px;
+	font-size: 13px;
+	color: var(--muted);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+input {
+	width: 100%;
+	padding: 14px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: var(--card);
+	color: inherit;
+	font: inherit;
+	font-size: 17px;
+}
+
+input#code {
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+}
+
+button {
+	display: block;
+	width: 100%;
+	margin-top: 20px;
+	padding: 15px;
+	border: 0;
+	border-radius: 12px;
+	background: var(--foreground);
+	color: var(--background);
+	font: inherit;
+	font-weight: 600;
+}
+
+.notice {
+	margin: 0 0 8px;
+	padding: 14px;
+	border: 1px solid var(--error);
+	border-radius: 12px;
+	font-size: 14px;
+}
+
+.notice p {
+	margin: 0 0 10px;
+}
+
+a.button {
+	display: block;
+	padding: 12px;
+	border-radius: 10px;
+	background: var(--foreground);
+	color: var(--background);
+	font-weight: 600;
+	text-align: center;
+	text-decoration: none;
+}
+
+button.secondary {
+	margin-top: 12px;
+	background: transparent;
+	color: var(--foreground);
+	border: 1px solid var(--border);
+}
+
+.error {
+	margin: 12px 0 0;
+	color: var(--error);
+	font-size: 14px;
+}
+
+.hint,
+.checks {
+	margin: 24px 0 0;
+	color: var(--muted);
+	font-size: 13px;
+}
+
+.checks {
+	padding-left: 20px;
+}
+
+.checks li {
+	margin-bottom: 6px;
+}
+
+code {
+	color: var(--foreground);
+}

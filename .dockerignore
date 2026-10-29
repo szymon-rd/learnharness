@@ -1,0 +1,15 @@
+.git
+node_modules
+.next
+data
+.fresh-data
+auth.json
+*-credentials.json*
+phone-access-code
+.env*
+dist
+mobile
+tests
+docs
+deploy
+*.log

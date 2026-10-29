@@ -171,8 +171,28 @@ const warmTokens = createWarmMinter(mintFreshToken);
 let sharedCtx: AudioContext | null = null;
 let workletModule: Promise<void> | null = null;
 
+/** Shown when the page is not a secure context (the Android app over plain
+ *  http://<LAN IP>, 2026-10-29): browsers withhold navigator.mediaDevices
+ *  and AudioWorklet there, so capture can never start. localhost /
+ *  127.0.0.1 (the desktop shell, dev) ARE secure contexts — unaffected. */
+export const INSECURE_DICTATION_MESSAGE = "Dictation needs a secure (HTTPS) connection. See docs/android.md.";
+
+/** Can this page capture the mic at all? `isSecureContext` absent (non-
+ *  browser test hosts) counts as secure — only an explicit false, or the
+ *  missing APIs themselves, refuse. Pure read of the globals. */
+export function dictationCaptureSupported(): boolean {
+	if (typeof window === "undefined") return false;
+	if (window.isSecureContext === false) return false;
+	return typeof navigator.mediaDevices?.getUserMedia === "function";
+}
+
 function ensureAudioGraph(): { ctx: AudioContext; module: Promise<void> } {
-	if (!sharedCtx) sharedCtx = new AudioContext({ sampleRate: 16000 });
+	if (!sharedCtx) {
+		if (typeof AudioContext === "undefined") throw new Error(INSECURE_DICTATION_MESSAGE);
+		sharedCtx = new AudioContext({ sampleRate: 16000 });
+	}
+	// Insecure contexts expose AudioContext but not its audioWorklet.
+	if (!sharedCtx.audioWorklet) throw new Error(INSECURE_DICTATION_MESSAGE);
 	if (!workletModule) {
 		workletModule = sharedCtx.audioWorklet.addModule("/worklets/pcm-capture.js").catch((e: unknown) => {
 			workletModule = null; // failed load: retry next run
@@ -420,6 +440,13 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
 		bufferRef.current = []; // fresh run, fresh buffer (round 2)
 		pendingRef.current = []; // fresh run, fresh queue (mitigation A)
 		const gen = ++genRef.current;
+		// No mic API on this origin (plain-http LAN access): fail fast and
+		// cleanly — the idle button shows the reason, nothing is fetched.
+		if (!dictationCaptureSupported()) {
+			setError(INSECURE_DICTATION_MESSAGE);
+			cleanup(false); // no token pre-mint: this origin can never use it
+			return;
+		}
 		let language: DictationLanguage;
 		try {
 			language = await getLanguage();
@@ -693,10 +720,11 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 					}}
 					aria-label={error ? `Dictation failed: ${error}` : "Start dictation"}
 					data-testid="dictation-toggle"
-					className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-border/50 bg-card/50 text-xs text-muted-foreground/70 shadow-lg backdrop-blur transition-colors hover:border-border hover:text-muted-foreground"
+					className="flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-border/50 bg-card/50 text-xs text-muted-foreground/70 shadow-lg backdrop-blur transition-colors hover:border-border hover:text-muted-foreground max-sm:h-auto max-sm:min-h-9 max-sm:py-1.5"
 				>
-					<MicIcon className="size-3.5" />
-					<span className="max-w-full truncate">{error ?? "Dictate"}</span>
+					<MicIcon className="size-3.5 shrink-0" />
+					{/* Phone: an error reason wraps instead of truncating (no hover tooltip on touch). */}
+					<span className="max-w-full truncate max-sm:whitespace-normal max-sm:text-center">{error ?? "Dictate"}</span>
 				</button>
 			</Hint>
 		);
@@ -711,7 +739,7 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 					disabled={phase === "stopping"}
 					aria-label="Stop dictation"
 					data-testid="dictation-toggle"
-					className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-destructive/10 px-2 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20"
+					className="flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-destructive/10 px-2 text-xs font-medium text-destructive transition-colors hover:bg-destructive/20 max-sm:h-9 max-sm:px-3"
 				>
 					{phase === "stopping" ? <Loader2Icon className="size-3.5 animate-spin" /> : <MicIcon className="size-3.5" />}
 					Stop

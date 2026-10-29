@@ -2,7 +2,7 @@
 
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
-import { visibleQueuedSteers } from "@/components/session-core";
+import { STREAM_DROPPED, visibleQueuedSteers } from "@/components/session-core";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
 import { useModelSetup, selectedModelUnavailable, openModelPicker, ZeroKeysPill } from "@/components/setup-cta";
@@ -49,7 +49,7 @@ import { PlanBlock, PlanPopup, latestTree } from "@/components/plan-block";
 import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
-import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
+import { ArrowRightIcon, DumbbellIcon, SearchIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
@@ -89,8 +89,10 @@ import { currentUserThinkingOpen, setAllUserThinkingOpen } from "@/components/th
  * deliberately narrower (~46rem centered) per the reference. Same ELEMENT,
  * same place — width polish only.
  */
-const COLUMN = "mx-auto w-full max-w-none px-6";
-const DOCK = "mx-auto w-full max-w-[46rem] px-4";
+// Phone (< sm): thinner side margins — 24px a side is ~12% of a phone's
+// width; 16px (prose) / 8px (the dock blob) keep the reading measure.
+const COLUMN = "mx-auto w-full max-w-none px-6 max-sm:px-4";
+const DOCK = "mx-auto w-full max-w-[46rem] px-4 max-sm:px-2";
 // The DOCK container's fixed width (46rem) and the plan marginalia's
 // geometry (owner, plan-placement round): the bare diagram sits in the
 // dock band's RIGHT flank — MARGIN_GAP from the DOCK container's edge and
@@ -747,6 +749,17 @@ export function Chat({
 	 * kind, nothing active, nothing in flight, and at least one problem
 	 * has ever been posed (the fresh session's opening turn is owed, not
 	 * the move-on). Enter-on-empty and the Next chip both key on it. */
+	// Touch screens have no Enter-on-empty habit (and soft keyboards hide
+	// until focus), so the practice pause hint names the button instead.
+	const [coarsePointer, setCoarsePointer] = useState(false);
+	useEffect(() => {
+		const query = window.matchMedia?.("(pointer: coarse)");
+		if (!query) return;
+		setCoarsePointer(query.matches);
+		const onChange = () => setCoarsePointer(query.matches);
+		query.addEventListener?.("change", onChange);
+		return () => query.removeEventListener?.("change", onChange);
+	}, []);
 	const nextReady =
 		kind === "practice" &&
 		!pending &&
@@ -775,10 +788,35 @@ export function Chat({
 	 * when nothing is active; the two never overlap). */
 	useEnterSubmits(sendNext);
 
+	// The latest syncFromServer, for the back-online retry below (the
+	// callback cannot name itself inside its own useCallback).
+	const syncFromServerRef = useRef<() => Promise<void>>(async () => {});
+	const syncRetryArmedRef = useRef(false);
 	const syncFromServer = useCallback(async () => {
-		const res = await fetch(`/api/chats/${chatId}`);
-		if (!res.ok) return;
-		const record = (await res.json()) as { messages?: LhMessage[]; turns?: TurnUsage[]; pricing?: SessionPricing; turnError?: string };
+		let record: { messages?: LhMessage[]; turns?: TurnUsage[]; pricing?: SessionPricing; turnError?: string };
+		try {
+			const res = await fetch(`/api/chats/${chatId}`);
+			if (!res.ok) return;
+			record = (await res.json()) as typeof record;
+		} catch {
+			// The network dropped (a phone between networks, the app
+			// backgrounded): every caller fires and forgets, so a throw here
+			// was an unhandled rejection — and the settle-time canonical sync
+			// it skipped would leave the streamed tail un-canonized. Adopt the
+			// record once the connection is back instead (one armed retry).
+			if (!syncRetryArmedRef.current) {
+				syncRetryArmedRef.current = true;
+				window.addEventListener(
+					"online",
+					() => {
+						syncRetryArmedRef.current = false;
+						void syncFromServerRef.current();
+					},
+					{ once: true },
+				);
+			}
+			return;
+		}
 		if (Array.isArray(record.turns)) setTurns(record.turns);
 		setPricing(record.pricing);
 		if (!Array.isArray(record.messages)) return;
@@ -792,6 +830,7 @@ export function Chat({
 		// sync must never automatically replace a reply that failed to save.
 		continueIfOwed(record.messages);
 	}, [chatId, setMessages, continueIfOwed]);
+	syncFromServerRef.current = syncFromServer;
 
 	// The settled terminal's other half (stream-reattach wave): the
 	// transport resolved turn-settled — no turn running, the record is
@@ -986,29 +1025,55 @@ export function Chat({
 	// from its view, so the server turn runs ON behind the error banner —
 	// re-enter the in-flight watch (the 1500ms fallback poll adopts at
 	// settle) instead of leaving the session blind until the next send's
-	// 409 merge-retry heals it. One record check per error transition.
+	// 409 merge-retry heals it. One record check per error transition —
+	// and, when that check itself cannot reach the server (a phone that
+	// dropped off the network), once more when the connection is back:
+	// the events channel reopening or the browser's `online`. Without that
+	// second chance a turn that FINISHED while the phone was offline left
+	// the view stuck on the drop banner (its turn-settled event was missed)
+	// until a manual reload.
+	const dropCheckOwedRef = useRef(false);
+	const errorRef = useRef(error);
+	errorRef.current = error;
+	const checkDroppedTurn = useCallback(async () => {
+		let record: { turnInFlight?: boolean };
+		try {
+			const res = await fetch(`/api/chats/${chatId}`);
+			if (!res.ok) return;
+			record = (await res.json()) as { turnInFlight?: boolean };
+		} catch {
+			return; /* still unreachable — the reconnect retries (below) */
+		}
+		dropCheckOwedRef.current = false;
+		if (statusRef.current !== "error") return; // healed meanwhile
+		if (record.turnInFlight === true) {
+			setTurnInFlight(true);
+			return;
+		}
+		// The turn is over and the record is its durable truth. A transport
+		// drop's banner no longer describes anything (the reply is in the
+		// record); a real turn error rides record.turnError back in.
+		if (errorRef.current?.message === STREAM_DROPPED) clearError();
+		void syncFromServer();
+	}, [chatId, syncFromServer, clearError]);
 	const prevErrorStatusRef = useRef(status);
 	useEffect(() => {
 		const was = prevErrorStatusRef.current;
 		prevErrorStatusRef.current = status;
 		if (was === "error" || status !== "error") return;
-		let cancelled = false;
-		void (async () => {
-			try {
-				const res = await fetch(`/api/chats/${chatId}`);
-				if (!res.ok || cancelled) return;
-				const record = (await res.json()) as { turnInFlight?: boolean };
-				if (cancelled) return;
-				if (record.turnInFlight === true) setTurnInFlight(true);
-				else void syncFromServer();
-			} catch {
-				/* transient — the banner stands; the next send's merge-retry heals */
-			}
-		})();
-		return () => {
-			cancelled = true;
+		dropCheckOwedRef.current = true;
+		void checkDroppedTurn();
+	}, [status, checkDroppedTurn]);
+	useServerResync(() => {
+		if (dropCheckOwedRef.current) void checkDroppedTurn();
+	});
+	useEffect(() => {
+		const onOnline = () => {
+			if (dropCheckOwedRef.current) void checkDroppedTurn();
 		};
-	}, [status, chatId, syncFromServer]);
+		window.addEventListener("online", onOnline);
+		return () => window.removeEventListener("online", onOnline);
+	}, [checkDroppedTurn]);
 
 	// ── Central job observability (contracts.ts "THE ASYNC PROTOCOL" §4) ──
 	// ONE fetch of /api/jobs drives every job surface (transcript dispatch
@@ -1311,7 +1376,7 @@ export function Chat({
 								spellCheck={false}
 								aria-label="Session title"
 								title="Rename this session"
-								className="lh-no-drag min-w-[8ch] max-w-[70%] shrink-0 bg-transparent font-title text-3xl tracking-tight caret-current outline-none [field-sizing:content]"
+								className="lh-no-drag min-w-[8ch] max-w-[70%] shrink-0 bg-transparent font-title text-3xl tracking-tight caret-current outline-none [field-sizing:content] max-sm:!text-2xl"
 							/>
 							{/* flex-1 spacer during rename too, so the chips stay at
 							    the right edge; clicks here commit via the header
@@ -1332,7 +1397,7 @@ export function Chat({
 								setTitleDraft(titleText);
 								setRenaming(true);
 							}}
-							className="lh-no-drag -mx-1.5 min-w-4 shrink cursor-text truncate rounded-md px-1.5 text-left font-title text-3xl tracking-tight transition-colors hover:bg-accent"
+							className="lh-no-drag -mx-1.5 min-w-4 shrink cursor-text truncate rounded-md px-1.5 text-left font-title text-3xl tracking-tight transition-colors hover:bg-accent max-sm:text-2xl"
 						>
 							{titleText}
 							</button>
@@ -1342,6 +1407,19 @@ export function Chat({
 							<div className="min-w-4 flex-1" aria-hidden="true" />
 					</>
 					)}
+					{/* Touch entry to Find (phone adaptation, 2026-10-29): ⌘F is the
+					    only door on desktop; a coarse pointer has no keyboard, so the
+					    same find event rides a search button. Hidden on fine
+					    pointers — the desktop bar is unchanged. */}
+					<button
+						type="button"
+						aria-label="Find in session"
+						data-testid="session-find-open"
+						onClick={() => window.dispatchEvent(new CustomEvent(kbdEventForChat("find")))}
+						className="lh-no-drag hidden size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground pointer-coarse:flex"
+					>
+						<SearchIcon className="size-4" />
+					</button>
 					{/* The plan chip (owner, plan-placement round): session-level
 					    structure beside the phase chip — access to the full-DAG popup
 					    at every width; the marginalia is the wide-screen glance view. */}
@@ -1354,7 +1432,7 @@ export function Chat({
 								blurAfterPointerClick(e);
 								setPlanOpen(true);
 							}}
-							className="lh-no-drag flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border/80 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+							className="lh-no-drag flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border/80 px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground transition-colors hover:border-border hover:text-foreground max-sm:py-2"
 						>
 							<WaypointsIcon className="size-3.5 text-primary" aria-hidden />
 							Plan
@@ -1379,10 +1457,15 @@ export function Chat({
 							className="pointer-events-none flex shrink-0 select-none items-center gap-1 text-xs font-medium uppercase tracking-wide text-muted-foreground"
 						>
 							<DumbbellIcon className="size-3" />
-							Practice
+							{/* Phone: the dumbbell alone — the title gets the width. */}
+							<span className="max-sm:hidden">Practice</span>
 						</span>
 					) : (
-						<PhaseChip phase={phases.at(-1) ?? "probe"} />
+						// Phone: the phase label yields its width to the session
+						// title (the transcript's phase dividers still mark it).
+						<span className="contents max-sm:hidden">
+							<PhaseChip phase={phases.at(-1) ?? "probe"} />
+						</span>
 					)}
 				</TopBar>
 
@@ -1732,7 +1815,7 @@ export function Chat({
 							// applies.
 							nextProblem={nextReady}
 							onNext={sendNext}
-							placeholder={nextReady ? "Ask anything, or press Enter for the next one." : undefined}
+							placeholder={nextReady ? (coarsePointer ? "Ask anything, or tap Next problem." : "Ask anything, or press Enter for the next one.") : undefined}
 						/>
 					}
 					onSubmitAnswer={(output) => {
@@ -2326,7 +2409,7 @@ function DockOverlay({
 	return (
 		<div className="pointer-events-none absolute inset-x-0 bottom-0" style={{ right: sbInset }}>
 			<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
-			<div ref={blockRef} className="relative bg-background pb-5">
+			<div ref={blockRef} className="relative bg-background pb-5 max-sm:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
 				<div className={DOCK}>
 					<div ref={viewportRef} data-dock-viewport="" className="pointer-events-auto">
 					<div ref={bodyRef}>

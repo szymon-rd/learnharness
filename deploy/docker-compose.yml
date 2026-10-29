@@ -1,0 +1,37 @@
+# LearnHarness on your own server: the app plus Caddy for automatic HTTPS.
+#   cp .env.example .env    # set LH_HOST
+#   docker compose up -d --build
+# See docs/deploy-vps.md.
+services:
+  learnharness:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      LH_PUBLIC_URL: https://${LH_HOST:?Set LH_HOST in deploy/.env (see .env.example)}
+    volumes:
+      - learnharness-data:/data
+    # Chromium (interactive demos) needs more shared memory than Docker's 64 MB default.
+    shm_size: 1gb
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - learnharness
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      LH_HOST: ${LH_HOST:?Set LH_HOST in deploy/.env (see .env.example)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  learnharness-data:
+  caddy-data:
+  caddy-config:

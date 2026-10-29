@@ -598,3 +598,54 @@ body {
 	outline: 1px solid var(--border);
 	border-radius: 0.25rem;
 }
+
+/* ============================================================
+ * PHONE / TOUCH ADAPTATION (Android WebView client, 2026-10-29).
+ * The desktop window floor is 640px (electron/main.cjs), so every rule
+ * below is scoped to < 640px or to coarse/hover-less pointers — the
+ * desktop rendering is untouched. Component-level tweaks use Tailwind's
+ * max-sm: / pointer-coarse: variants; these are the cross-cutting ones.
+ * ============================================================ */
+@media (max-width: 639px) {
+	html {
+		/* Keep the designed type sizes — no automatic text inflation. */
+		-webkit-text-size-adjust: 100%;
+		text-size-adjust: 100%;
+	}
+	/* Mobile browsers ZOOM the page when a focused field's text is under
+	   16px. Every text entry on a phone runs at 16px (the prose reading
+	   size) — unlayered, so it beats the components' utility sizes. */
+	input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+	textarea,
+	select,
+	[contenteditable="true"] {
+		font-size: 16px;
+	}
+	/* Long unbroken tokens (ids, URLs, paths) in prose wrap instead of
+	   pushing the column wider than the screen. */
+	.lh-prose {
+		overflow-wrap: anywhere;
+	}
+	/* Code stays on its lines (it scrolls inside its block). */
+	.lh-prose :where(pre, code) {
+		overflow-wrap: normal;
+	}
+}
+
+/* Touch: no grey tap flash (the app's own pressed/selected states carry
+   the feedback); double-tap-to-zoom off on controls only — pinch zoom
+   stays. */
+@media (pointer: coarse) {
+	* {
+		-webkit-tap-highlight-color: transparent;
+	}
+	:is(button, a, [role="button"], summary, label) {
+		touch-action: manipulation;
+	}
+	/* The code block's copy corner is always visible on touch (no hover to
+	   reveal it), so it gets a row of its own above the code instead of
+	   sitting on the first line. */
+	[data-testid="md-code"] [data-streamdown="code-block"] {
+		padding-top: 2rem;
+	}
+}

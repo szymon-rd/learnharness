@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { MenuShell } from "@/components/menu-shell";
 import { DeleteSessionDialog } from "@/components/delete-session-dialog";
 import type { ChatDeleteMode } from "@/src/core";
-import { DumbbellIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
+import { DumbbellIcon, EllipsisIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, SearchIcon, SettingsIcon } from "lucide-react";
 import { ActivitySection } from "@/components/activity-dock";
 import { CoverageMenuBlock } from "@/components/extraction-coverage";
 import { LhMark } from "@/components/lh-mark";
@@ -51,6 +51,16 @@ const STORAGE_KEY = "lh:sidebar-open";
 import type { ChatGPTControlBridge, NativeSubscriptionControlBridge } from "@/src/core";
 import type { UpdateState } from "@/components/settings/update-settings.tsx";
 const SIDEBAR_AUTOCLOSE = 928;
+
+/** Phone layout (Android WebView, 2026-10-29): below Tailwind's `sm`
+ *  breakpoint the sidebar is an OVERLAY DRAWER (fixed, over a backdrop)
+ *  instead of an inline column — 288px inline would leave the page ~120px
+ *  on a phone. The desktop window floor is 640px (electron/main.cjs), so
+ *  this query never matches in the desktop shell. */
+const PHONE_QUERY = "(max-width: 639px)";
+function isPhoneViewport(): boolean {
+	return typeof window !== "undefined" && window.matchMedia?.(PHONE_QUERY).matches === true;
+}
 
 // Module scope, guarded for SSR (the server has no navigator).
 const IS_ELECTRON = typeof navigator !== "undefined" && navigator.userAgent.includes("Electron");
@@ -126,8 +136,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 		void window.lh?.getZoom?.().then(setZoomVar);
 
 		const stored = localStorage.getItem(STORAGE_KEY);
-		// Default: open (first run introduces the sidebar).
-		setOpen(stored === null ? true : stored === "1");
+		// Default: open (first run introduces the sidebar). Phones always
+		// start closed — the drawer covers the page, so it opens on demand.
+		setOpen(isPhoneViewport() ? false : stored === null ? true : stored === "1");
 		setMounted(true);
 		return () => off?.();
 	}, []);
@@ -157,7 +168,9 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 			return;
 		}
 		setOpen((v) => {
-			localStorage.setItem(STORAGE_KEY, v ? "0" : "1");
+			// The phone drawer's open/close is transient — it must not
+			// rewrite the persisted (desktop) preference.
+			if (!isPhoneViewport()) localStorage.setItem(STORAGE_KEY, v ? "0" : "1");
 			return !v;
 		});
 	}, [narrow, open]);
@@ -305,7 +318,7 @@ export function SessionRow({
 			onContextMenu={onContextMenu}
 			data-testid={kbdSelected ? "session-row-kbd" : "session-row"}
 			className={cn(
-				"relative mb-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent",
+				"relative mb-0.5 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-accent pointer-coarse:pr-11",
 				active && "bg-accent",
 				kbdSelected && !active && "bg-accent/60 ring-1 ring-border",
 			)}
@@ -628,11 +641,11 @@ function SessionsSidebar() {
 		return () => window.removeEventListener("lh:kbd-sessions-search", onFocusSearch);
 	}, [open, toggle]);
 
-	// Keep the kbd-selected row in view (the rows are the container's only
-	// buttons, so the index matches).
+	// Keep the kbd-selected row in view (the walked row carries its own
+	// testid — the touch ⋯ buttons share the container, so index by row).
 	useEffect(() => {
 		if (kbdIndex === null) return;
-		listRef.current?.querySelectorAll("button")[kbdIndex]?.scrollIntoView({ block: "nearest" });
+		listRef.current?.querySelector('[data-testid="session-row-kbd"]')?.scrollIntoView({ block: "nearest" });
 	}, [kbdIndex]);
 
 	useEffect(() => {
@@ -642,12 +655,40 @@ function SessionsSidebar() {
 		// freshness (S6) — no interval, nothing standing.
 	}, [open, pathname, refresh]);
 
+	// Phone drawer: a navigation (a row tap, New session) closes it — the
+	// drawer covers the page the learner just asked for. Desktop keeps the
+	// inline sidebar open across navigations, as always.
+	const openRef = useRef(open);
+	openRef.current = open;
+	const prevPathRef = useRef(pathname);
+	useEffect(() => {
+		if (prevPathRef.current === pathname) return;
+		prevPathRef.current = pathname;
+		if (openRef.current && isPhoneViewport()) toggle();
+	}, [pathname, toggle]);
+
 	return (
+		<>
+		{/* Phone-only backdrop: tapping outside the drawer closes it. */}
+		{open && (
+			<div
+				aria-hidden="true"
+				data-testid="sidebar-backdrop"
+				onClick={toggle}
+				className="fixed inset-0 z-40 bg-black/60 sm:hidden"
+			/>
+		)}
 		<aside
-			className={cn("sidebar-motion shrink-0 overflow-hidden duration-200", open ? "w-72" : "w-0")}
+			className={cn(
+				"sidebar-motion shrink-0 overflow-hidden duration-200",
+				// Phone: an overlay drawer (fixed, above the page) instead of an
+				// inline column; the width transition still slides it.
+				"max-sm:fixed max-sm:inset-y-0 max-sm:left-0 max-sm:z-50 max-sm:shadow-2xl",
+				open ? "w-72" : "w-0",
+			)}
 			aria-hidden={!open}
 		>
-			<div className="flex h-full w-72 flex-col border-r bg-background">
+			<div className="flex h-full w-72 flex-col border-r bg-background max-sm:pt-[env(safe-area-inset-top)] max-sm:pb-[env(safe-area-inset-bottom)]">
 				{/* LH wordmark — the owner's header; close toggle sits at the edge.
 				    Merged chrome (2026-09-17): in Electron this band is the
 				    window's drag surface and starts after the traffic lights
@@ -698,7 +739,7 @@ function SessionsSidebar() {
 						type="button"
 						data-testid="new-session"
 						onClick={() => void newSession()}
-						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground max-sm:py-2.5"
 					>
 						<PlusIcon className="size-3" />
 						Teaching
@@ -708,7 +749,7 @@ function SessionsSidebar() {
 						type="button"
 						data-testid="new-session-practice"
 						onClick={() => router.push("/chat/new?mode=practice")}
-						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+						className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground max-sm:py-2.5"
 					>
 						<DumbbellIcon className="size-3" />
 						Practice
@@ -770,7 +811,7 @@ function SessionsSidebar() {
 							}}
 							placeholder="Search…"
 							aria-label="Search sessions"
-							className="h-6 rounded-sm border-border bg-background pl-6 text-xs placeholder:text-muted-foreground/60"
+							className="h-6 rounded-sm border-border bg-background pl-6 text-xs placeholder:text-muted-foreground/60 max-sm:h-9 max-sm:pl-7"
 						/>
 						<SearchIcon className="pointer-events-none absolute left-1.5 top-1/2 size-3 -translate-y-1/2 text-muted-foreground/70" />
 					</span>
@@ -792,7 +833,7 @@ function SessionsSidebar() {
 							data-testid={`kind-filter-${f}`}
 							onClick={() => setFilter(f)}
 							className={cn(
-								"flex-1 rounded-sm px-2 py-1 text-[11px] uppercase tracking-wider transition-colors",
+								"flex-1 rounded-sm px-2 py-1 text-[11px] uppercase tracking-wider transition-colors max-sm:py-2",
 								kindFilter === f
 									? "bg-accent text-foreground"
 									: "text-muted-foreground hover:text-foreground",
@@ -820,17 +861,37 @@ function SessionsSidebar() {
 									onCancel={() => setRenamingId(null)}
 								/>
 							) : (
-								<SessionRow
-									key={c.id}
-									chat={c}
-									active={pathname === `/chat/${c.id}`}
-									kbdSelected={i === kbdIndex}
-									onOpen={() => {
-										setKbdIndex(null);
-										router.push(`/chat/${c.id}`);
-									}}
-									onContextMenu={(e) => openContext(e, c)}
-								/>
+								<div key={c.id} className="relative">
+									<SessionRow
+										chat={c}
+										active={pathname === `/chat/${c.id}`}
+										kbdSelected={i === kbdIndex}
+										onOpen={() => {
+											setKbdIndex(null);
+											router.push(`/chat/${c.id}`);
+										}}
+										onContextMenu={(e) => openContext(e, c)}
+									/>
+									{/* Touch has no right-click: a visible ⋯ opens the same
+									    context menu (Rename / Export / Delete). Coarse
+									    pointers only — the desktop row is unchanged. */}
+									<button
+										type="button"
+										aria-label={`Session actions: ${c.title}`}
+										data-testid="session-row-more"
+										onClick={(e) => {
+											if (ctxChatId === c.id) {
+												setCtxChatId(null);
+												return;
+											}
+											ctxAnchorRef.current = e.currentTarget;
+											setCtxChatId(c.id);
+										}}
+										className="absolute right-1 top-1/2 hidden size-10 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground pointer-coarse:flex"
+									>
+										<EllipsisIcon className="size-4" />
+									</button>
+								</div>
 							),
 						)
 					)}
@@ -850,9 +911,13 @@ function SessionsSidebar() {
 						<Hint label="Settings" action="open-settings" side="right">
 							<button
 								type="button"
-								onClick={() => openSettings()}
+								onClick={() => {
+									openSettings();
+									// Phone: the full-screen dialog replaces the drawer.
+									if (isPhoneViewport()) toggle();
+								}}
 								data-testid="settings-entry"
-								className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+								className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground transition-colors hover:bg-accent hover:text-foreground max-sm:py-2.5"
 							>
 								<SettingsIcon className="size-3" />
 								Settings
@@ -936,6 +1001,7 @@ function SessionsSidebar() {
 					onDeleted={onDeleted}
 				/>
 			</aside>
+		</>
 	);
 }
 

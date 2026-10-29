@@ -101,7 +101,7 @@ export function CopyCorner({
 				type="button"
 				aria-label={label}
 				data-testid="md-copy"
-				className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/md:opacity-100"
+				className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/md:opacity-100 pointer-coarse:opacity-100"
 				onClick={(e) => {
 					blurAfterPointerClick(e);
 					void copyText(getText()).then((ok) => {
@@ -211,7 +211,7 @@ function MermaidInline({ chart }: { chart: string }) {
 						type="button"
 						aria-label="Expand diagram"
 						data-testid="md-mermaid-expand"
-												className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/md:opacity-100"
+												className="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover/md:opacity-100 pointer-coarse:opacity-100"
 						onClick={(e) => {
 							blurAfterPointerClick(e);
 							overlay.openMermaid(chart);
@@ -377,7 +377,9 @@ export function MarkdownTable(props: ComponentProps<"table"> & ExtraProps) {
 	const { children, node, ...rest } = props;
 	const ref = useRef<HTMLTableElement>(null);
 	return (
-		<div className="group/md relative my-4" data-testid="md-table">
+		// Touch shows the corner permanently (no hover): it gets a row of
+		// its own above the table, so header cells never scroll beneath it.
+		<div className="group/md relative my-4 pointer-coarse:pt-7" data-testid="md-table">
 			<CopyCorner
 				// Contained in the table's top-right corner (owner note, 2026-09-19:
 				// the old -top-3 lifted only half the 24px button above the 12px
@@ -431,7 +433,9 @@ export function MathDisplay(props: ComponentProps<"span"> & ExtraProps) {
 		// land on it (owner report: the math corner neither highlights on hover
 		// nor copies; everything else works). display:block gives the corner a
 		// real box; z-10 keeps it above the equation spans it overlays.
-		<span className="group/md relative block z-0" data-testid="md-math">
+		// Touch (no hover) shows the corner permanently, so the equation
+		// keeps a gutter for it instead of scrolling underneath it.
+		<span className="group/md relative block z-0 pointer-coarse:pr-7" data-testid="md-math">
 			<CopyCorner
 				className="absolute top-0 right-0 z-10"
 				label="Copy equation source"

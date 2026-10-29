@@ -76,6 +76,11 @@ export function computeMenuPlacement(
 	contentHeight: number,
 	preferredSide: MenuSide,
 	align: MenuAlign,
+	/** The menu's rendered width (phone adaptation, 2026-10-29). When the
+	 *  aligned edge would push the menu past the viewport's other edge it
+	 *  is clamped back inside — a no-op wherever the menu already fits
+	 *  (every desktop placement), so omitting it keeps the old decision. */
+	contentWidth = 0,
 ): MenuPlacement {
 	const availDown = viewport.height - EDGE - (rect.bottom + GAP);
 	const availUp = rect.top - GAP - EDGE;
@@ -91,8 +96,15 @@ export function computeMenuPlacement(
 	}
 	const avail = side === "down" ? availDown : availUp;
 	const maxHeight = Math.max(MIN_USABLE, Math.min(CAP_VH * viewport.height, avail));
-	const horizontal: Record<string, number> =
+	let horizontal: Record<string, number> =
 		align === "right" ? { right: viewport.width - rect.right } : { left: rect.left };
+	if (contentWidth > 0) {
+		const width = Math.min(contentWidth, viewport.width - 2 * EDGE);
+		if (align === "right" && rect.right - width < EDGE) horizontal = { left: EDGE };
+		if (align === "left" && rect.left + width > viewport.width - EDGE) {
+			horizontal = { left: Math.max(EDGE, viewport.width - EDGE - width) };
+		}
+	}
 	const vertical: Record<string, number> =
 		side === "down" ? { top: rect.bottom + GAP } : { bottom: viewport.height - rect.top + GAP };
 	return { side, style: { ...horizontal, ...vertical }, maxHeight };
@@ -204,6 +216,7 @@ export function MenuShell({
 				menuRef.current.scrollHeight,
 				preferredSide,
 				align,
+				menuRef.current.offsetWidth,
 			);
 			setPlaced(p);
 		};
@@ -245,7 +258,9 @@ export function MenuShell({
 			data-lh-menu=""
 			tabIndex={-1}
 			onKeyDown={onBodyKeyDown}
-			style={{ position: "fixed", zIndex: 60, ...placed.style, maxHeight: placed.maxHeight, overflowY: "auto" }}
+			// maxWidth: a fixed-width menu (w-[22rem]) never runs off a phone
+			// screen — inert on any desktop window (all menus fit 640px).
+			style={{ position: "fixed", zIndex: 60, ...placed.style, maxHeight: placed.maxHeight, maxWidth: `calc(100vw - ${2 * EDGE}px)`, overflowY: "auto" }}
 			// The body is the arrow machine's focus home (input-less menus
 			// land focus here on open) — the focus STAYS, but the browser's
 			// default blue ring around it must not draw (owner, polish
