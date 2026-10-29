@@ -145,9 +145,13 @@ export function browserServiceSpawnEnv(
 
 /** The helper binary: inside the packaged app the server runs under
  *  ELECTRON_RUN_AS_NODE so process.execPath IS the app binary; in dev
- *  (plain node) the electron package resolves to the dev binary path. */
-export function browserServiceBinary(): string | null {
+ *  (plain node) the electron package resolves to the dev binary path.
+ *  Outside Electron, an explicit CHROME_PATH (the VPS image, servers for
+ *  the phone app) means "use that Chrome": no helper, so requiring the
+ *  electron package never tries to download its binary on every demo. */
+export function browserServiceBinary(env: Record<string, string | undefined> = process.env): string | null {
 	if (process.versions.electron) return process.execPath;
+	if (env.CHROME_PATH) return null;
 	try {
 		const req = createRequire(import.meta.url);
 		const p = req("electron") as unknown as string;

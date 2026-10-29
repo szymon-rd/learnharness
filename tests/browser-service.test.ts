@@ -8,7 +8,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { browserServiceSpawnEnv, parseBrowserServiceLine } from "../src/agent/subagents/headless.ts";
+import { browserServiceBinary, browserServiceSpawnEnv, parseBrowserServiceLine } from "../src/agent/subagents/headless.ts";
 
 describe("browser-service helper (pure halves)", () => {
 	it("parses the handshake line into a port", () => {
@@ -38,5 +38,11 @@ describe("browser-service helper (pure halves)", () => {
 		browserServiceSpawnEnv(original);
 		assert.equal(original.ELECTRON_RUN_AS_NODE, "1");
 		assert.equal(original.KEEP, "yes");
+	});
+});
+
+describe("browserServiceBinary", () => {
+	it("an explicit CHROME_PATH outside Electron skips the Electron helper", () => {
+		assert.equal(browserServiceBinary({ CHROME_PATH: "/usr/bin/chromium" }), null);
 	});
 });
