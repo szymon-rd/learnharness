@@ -115,12 +115,25 @@ async function launch() {
 /** The app's current WebView page. Re-attaches when Android replaced the
  * DevTools target (e.g. the activity was recreated). */
 async function attach() {
-	const webview = await device.webView({ pkg: PKG }, { timeout: 20_000 });
-	let page = await webview.page();
-	if (page.isClosed()) {
-		// Same app process, new renderer: pick up the replacement target.
-		const context = page.context();
-		page = context.pages().find((p) => !p.isClosed()) ?? (await context.waitForEvent("page", { timeout: 15_000 }));
+	let page;
+	for (let attempt = 1; ; attempt++) {
+		try {
+			// The newest WebView of the app: after the app restarts its screen
+			// (renderer gone), the old one lingers in the list for a while.
+			const views = device.webViews().filter((w) => w.pkg() === PKG);
+			const webview = views.length ? views[views.length - 1] : await device.webView({ pkg: PKG }, { timeout: 20_000 });
+			page = await webview.page();
+			if (page.isClosed()) {
+				// Same app process, new renderer: pick up the replacement target.
+				const context = page.context();
+				page = context.pages().find((p) => !p.isClosed()) ?? (await context.waitForEvent("page", { timeout: 8_000 }));
+			}
+			break;
+		} catch (err) {
+			if (attempt >= 3) throw err;
+			console.log(`  (attach attempt ${attempt}: ${String(err?.message).split("\n")[0]})`);
+			await sleep(2000);
+		}
 	}
 	page.on("close", () => console.log("  (WebView page target closed)"));
 	page.on("framenavigated", (f) => {
