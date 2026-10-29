@@ -323,9 +323,10 @@ try {
 	let crashAt = 0;
 	try {
 		const p = await live();
-		const cdp = await p.context().newCDPSession(p);
+		const cdp = await Promise.race([p.context().newCDPSession(p), sleep(10_000).then(() => Promise.reject(new Error("no CDP session within 10 s")))]);
 		crashAt = Date.now();
-		await cdp.send("Page.crash").catch(() => {});
+		// Not awaited: with the renderer gone, newer WebViews never answer it.
+		cdp.send("Page.crash").catch(() => {});
 	} catch (err) {
 		console.log(`  (could not crash the renderer: ${String(err?.message).split("\n")[0]})`);
 	}
