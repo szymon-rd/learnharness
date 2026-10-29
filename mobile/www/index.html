@@ -11,6 +11,11 @@
 	<main id="connect" hidden>
 		<h1>LearnHarness</h1>
 		<p class="lead">Connect to your LearnHarness server.</p>
+		<div id="outdated" class="notice" hidden>
+			<p><strong>Update Android System WebView</strong></p>
+			<p>LearnHarness needs Android System WebView version 111 or newer. This phone has version <span id="webview-version"></span>, so the app will not work properly until it is updated.</p>
+			<a class="button" href="https://play.google.com/store/apps/details?id=com.google.android.webview">Open in Play Store</a>
+		</div>
 		<form id="form" novalidate>
 			<label for="url">Server address</label>
 			<input id="url" name="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://lh.example.com" required>

@@ -11,6 +11,8 @@
  *   the user can change the server.
  * - The native ServerLink plugin is told the server origin, so links to it
  *   stay inside the app and every other link opens in the phone's browser.
+ * - If the phone's WebView is older than LearnHarness needs, this screen
+ *   says so (with a Play Store link) instead of connecting automatically.
  */
 (function () {
 	"use strict";
@@ -57,6 +59,16 @@
 		}
 	}
 
+	/** Next.js 16 pages need Chrome 111 or newer. Android updates its
+	 *  WebView through the Play Store, but a phone that never did can
+	 *  still have an older one. Returns its major version when too old. */
+	var MIN_WEBVIEW = 111;
+	function outdatedWebView() {
+		var match = /Chrome\/(\d+)/.exec(navigator.userAgent || "");
+		var major = match ? parseInt(match[1], 10) : 0;
+		return major && major < MIN_WEBVIEW ? major : 0;
+	}
+
 	function normalizeCode(raw) {
 		return String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
 	}
@@ -86,9 +98,16 @@
 			/* no sessionStorage: always show the form after the first connect */
 		}
 
-		if (saved && !editing && !alreadyAuto) {
+		// An outdated WebView stays on this screen, so the update notice is
+		// seen; Connect still works.
+		var outdated = outdatedWebView();
+		if (saved && !editing && !alreadyAuto && !outdated) {
 			connect(saved);
 			return;
+		}
+		if (outdated) {
+			document.getElementById("webview-version").textContent = String(outdated);
+			document.getElementById("outdated").hidden = false;
 		}
 
 		var main = document.getElementById("connect");
@@ -137,5 +156,5 @@
 		});
 	}
 
-	window.LH = { initConnectPage: initConnectPage, initErrorPage: initErrorPage, normalizeUrl: normalizeUrl };
+	window.LH = { initConnectPage: initConnectPage, initErrorPage: initErrorPage, normalizeUrl: normalizeUrl, outdatedWebView: outdatedWebView };
 })();

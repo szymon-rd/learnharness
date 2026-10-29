@@ -52,6 +52,29 @@ function check(ok, label, detail = "") {
 	if (!ok) failures++;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** WebView major version, read on the connect screen. Below 111 the
+ *  LearnHarness pages (Next.js 16) are not expected to work: the app shows
+ *  an update notice instead, and checks of the pages themselves report
+ *  SKIP when they fail. Stock emulator images below Android 14 ship such
+ *  a WebView; a real phone updates it through the Play Store. */
+const MIN_WEBVIEW = 111;
+let webViewMajor = 0;
+const oldWebView = () => webViewMajor > 0 && webViewMajor < MIN_WEBVIEW;
+function uiCheck(ok, label, detail = "") {
+	if (!ok && oldWebView()) {
+		record(`SKIP: ${label} — WebView ${webViewMajor} is older than the ${MIN_WEBVIEW} LearnHarness needs${detail ? ` (${detail})` : ""}`);
+		return;
+	}
+	check(ok, label, detail);
+}
+/** With an old WebView the connect screen shows the update notice and
+ *  does not connect by itself: check the notice, then tap Connect. */
+async function connectIfOutdated() {
+	if (!oldWebView()) return;
+	const notice = await withPage("update notice", (p) => p.waitForSelector("#outdated", { state: "visible", timeout: 15_000 }).then(() => true)).catch(() => false);
+	check(notice, "old WebView: the connect screen shows the update notice instead of connecting");
+	await withPage("connect anyway", (p) => p.click("button[type=submit]"));
+}
 
 const [device] = await android.devices();
 if (!device) throw new Error("no adb device");
@@ -171,6 +194,10 @@ try {
 	page = await launch();
 	await (await live()).waitForSelector("#form", { state: "visible", timeout: 30_000 });
 	check((await currentUrl()).startsWith("https://localhost/"), "first launch shows the local connect screen", await currentUrl());
+	webViewMajor = await withPage("WebView version", (p) => p.evaluate(() => Number((/Chrome\/(\d+)/.exec(navigator.userAgent) || [])[1] || 0)));
+	console.log(`WebView major version: ${webViewMajor}`);
+	const noticeShown = await (await live()).isVisible("#outdated");
+	check(noticeShown === oldWebView(), oldWebView() ? "old WebView: the update notice shows" : "current WebView: no update notice", `WebView ${webViewMajor}`);
 	await shot("01-connect");
 
 	// 2. Validation, then connect + pair.
@@ -194,8 +221,8 @@ try {
 		width: innerWidth,
 		scrollWidth: document.documentElement.scrollWidth,
 	}));
-	check(home.composer, "home page rendered (composer present)");
-	check(home.scrollWidth <= home.width, "no horizontal scroll on home", `${home.scrollWidth} vs ${home.width}`);
+	uiCheck(home.composer, "home page rendered (composer present)");
+	uiCheck(home.scrollWidth <= home.width, "no horizontal scroll on home", `${home.scrollWidth} vs ${home.width}`);
 	await shot("02-home");
 
 	// Soft keyboard: tapping the composer must keep it visible above the
@@ -211,7 +238,7 @@ try {
 		});
 		const ime = (await adbShell("dumpsys input_method | grep -m1 mInputShown")).toString().trim();
 		record(`  (keyboard: ${ime}; composer bottom ${kb.bottom}, visible height ${kb.visible}, innerHeight ${kb.inner})`);
-		check(kb.bottom <= kb.visible + 1, "composer stays above the soft keyboard", `${kb.bottom} vs ${kb.visible}`);
+		uiCheck(kb.bottom <= kb.visible + 1, "composer stays above the soft keyboard", `${kb.bottom} vs ${kb.visible}`);
 		await shot("02b-keyboard");
 		await p.evaluate(() => document.activeElement?.blur());
 		await sleep(1000);
@@ -222,12 +249,12 @@ try {
 			const backdrop = document.querySelector('[data-testid="sidebar-backdrop"]');
 			return { backdrop: !!backdrop, overflow: document.documentElement.scrollWidth > innerWidth };
 		});
-		check(drawer.backdrop && !drawer.overflow, "sidebar opens as a drawer over the page");
+		uiCheck(drawer.backdrop && !drawer.overflow, "sidebar opens as a drawer over the page");
 		await shot("02c-sidebar");
 		await p.evaluate(() => document.querySelector('[data-testid="sidebar-backdrop"]')?.click());
 		await sleep(800);
 	} catch (err) {
-		check(false, "keyboard and sidebar checks ran", String(err?.message).split("\n")[0]);
+		uiCheck(false, "keyboard and sidebar checks ran", String(err?.message).split("\n")[0]);
 	}
 
 	// 3. Sessions load over the network (API behind the pairing cookie).
@@ -240,8 +267,8 @@ try {
 	const apiStatus = await (await live()).evaluate(() => fetch("/api/graph/status").then((r) => r.status));
 	check(apiStatus === 200, "API calls carry the pairing cookie", String(apiStatus));
 	const teach = await (await live()).evaluate(() => ({ text: document.body.innerText.slice(0, 4000), width: innerWidth, scrollWidth: document.documentElement.scrollWidth }));
-	check(teach.text.includes("test session"), "teaching session renders");
-	check(teach.scrollWidth <= teach.width, "no horizontal scroll in the teaching session", `${teach.scrollWidth} vs ${teach.width}`);
+	uiCheck(teach.text.includes("test session"), "teaching session renders");
+	uiCheck(teach.scrollWidth <= teach.width, "no horizontal scroll in the teaching session", `${teach.scrollWidth} vs ${teach.width}`);
 	await shot("03-teach");
 
 	await (await live()).evaluate((id) => {
@@ -249,7 +276,7 @@ try {
 	}, PRACTICE);
 	await waitForUrl(page, (u) => u.endsWith(`/chat/${PRACTICE}`));
 	await sleep(4000);
-	check((await (await live()).evaluate(() => document.body.innerText)).includes("PROBLEM"), "practice session renders");
+	uiCheck((await (await live()).evaluate(() => document.body.innerText)).includes("PROBLEM"), "practice session renders");
 	await shot("04-practice");
 
 	// 4. Outside links open outside the app (the WebView stays put).
@@ -285,8 +312,9 @@ try {
 	// 6. Cold restart: reconnects straight to the server.
 	step("6. Cold restart: reconnects straight to the server.");
 	page = await launch();
+	await connectIfOutdated();
 	url = await waitForUrl(page, (u) => u === `${SERVER}/`);
-	check(url === `${SERVER}/`, "cold restart reconnects to the saved server", url);
+	check(url === `${SERVER}/`, oldWebView() ? "cold restart keeps the saved server (Connect without retyping)" : "cold restart reconnects to the saved server", url);
 	await shot("06-restart");
 
 	// 7. Unreachable server → the app's error page, with a way back.
@@ -333,6 +361,7 @@ try {
 		try {
 			page = await launch();
 			attached = true;
+			await connectIfOutdated();
 			url = await waitForUrl(null, (u) => u === `${SERVER}/`, 15_000);
 		} catch (err) {
 			console.log(`  (relaunch attempt ${attempt}: ${String(err?.message).split("\n")[0]})`);

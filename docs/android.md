@@ -39,6 +39,8 @@ It prints something like:
 
 On the phone, open the repository's GitHub **Releases** page and download `LearnHarness.apk` from the **android-latest** release. Android asks you to allow installs from your browser; allow it once. Newer builds from the same release install over the old one and keep your settings.
 
+The app runs on Android 7 or newer, but the LearnHarness pages need **Android System WebView 111 or newer** (released in 2023). Phones with the Play Store update it automatically. If yours has an older one, the connect screen says so and links to its Play Store page.
+
 ## 3. Connect
 
 Open the app, type the **server address** and **access code** the script printed, and tap **Connect**. The app remembers both and reconnects by itself on later launches.
