@@ -71,6 +71,8 @@ Then **Actions → Deploy to VPS → Run workflow**, with the task:
 | `logs` | last 200 log lines of the app and Caddy |
 | `access-code` | print the phone access code in the run's log |
 
+The **Run workflow** button only appears once the workflow is on the default branch. From any branch, pushing a tag runs the same tasks: `vps-deploy-<n>`, `vps-status-<n>`, `vps-logs-<n>` or `vps-code-<n>` (for example `git tag vps-deploy-3 && git push origin vps-deploy-3`).
+
 The data stays in the Docker volumes across deploys. Anyone who can run workflows in the repository can control the server through this key; remove the key line from `authorized_keys` to revoke it.
 
 ## Day to day

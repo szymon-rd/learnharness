@@ -7,6 +7,9 @@ name: Deploy to VPS
 #   status       show the running containers and check the HTTPS address
 #   logs         the last 200 log lines of the app and Caddy
 #   access-code  print the phone access code (shown in this run's log)
+# Pushing a tag vps-deploy-*, vps-status-*, vps-logs-* or vps-code-* runs the
+# same tasks from any branch (manual runs need the workflow on the default
+# branch).
 #
 # One-time setup (docs/deploy-vps.md, "Deploy with GitHub Actions"):
 #   secret VPS_HOST     the server's IPv4 address
@@ -22,6 +25,8 @@ on:
         type: choice
         options: [deploy, status, logs, access-code]
         default: deploy
+  push:
+    tags: ["vps-deploy-*", "vps-status-*", "vps-logs-*", "vps-code-*"]
 
 permissions:
   contents: read
@@ -32,7 +37,7 @@ concurrency:
 
 jobs:
   run:
-    name: ${{ inputs.task }}
+    name: VPS
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
@@ -41,6 +46,21 @@ jobs:
       APP_DIR: /opt/learnharness
     steps:
       - uses: actions/checkout@v7
+
+      - name: Pick the task
+        env:
+          INPUT_TASK: ${{ inputs.task }}
+        run: |
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF_NAME" in
+            workflow_dispatch:*) task="$INPUT_TASK" ;;
+            *:vps-deploy-*) task=deploy ;;
+            *:vps-status-*) task=status ;;
+            *:vps-logs-*) task=logs ;;
+            *:vps-code-*) task=access-code ;;
+            *) echo "::error::unknown trigger $GITHUB_REF_NAME"; exit 1 ;;
+          esac
+          echo "TASK=$task" >> "$GITHUB_ENV"
+          echo "task: $task"
 
       - name: SSH setup
         env:
@@ -63,12 +83,12 @@ jobs:
           ssh -o BatchMode=yes -o ConnectTimeout=20 "root@$VPS_HOST" 'echo "connected to $(hostname) ($(. /etc/os-release; echo $PRETTY_NAME), $(nproc) CPU, $(free -m | awk "/Mem:/{print \$2}") MB RAM, $(df -h / | awk "NR==2{print \$4}") free)"'
 
       - name: Install Docker (first deploy only)
-        if: inputs.task == 'deploy'
+        if: env.TASK == 'deploy'
         run: |
           ssh -o BatchMode=yes "root@$VPS_HOST" 'command -v docker >/dev/null && docker compose version >/dev/null 2>&1 && echo "Docker present: $(docker --version)" || (curl -fsSL https://get.docker.com | sh)'
 
       - name: Copy this commit to the server
-        if: inputs.task == 'deploy'
+        if: env.TASK == 'deploy'
         run: |
           # A fresh copy each time (files deleted in git disappear on the server
           # too); the data is in Docker volumes, not in this folder.
@@ -84,7 +104,7 @@ jobs:
           "
 
       - name: Build and start
-        if: inputs.task == 'deploy'
+        if: env.TASK == 'deploy'
         run: |
           ssh -o BatchMode=yes -o ServerAliveInterval=30 "root@$VPS_HOST" "
             set -e
@@ -96,7 +116,7 @@ jobs:
           "
 
       - name: Check the HTTPS address
-        if: inputs.task == 'deploy' || inputs.task == 'status'
+        if: env.TASK == 'deploy' || env.TASK == 'status'
         run: |
           # The first deploy waits for Let's Encrypt to issue the certificate.
           for i in $(seq 1 60); do
@@ -115,16 +135,16 @@ jobs:
           echo "### LearnHarness is up at https://$LH_HOST" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Status
-        if: inputs.task == 'status'
+        if: env.TASK == 'status'
         run: |
           ssh -o BatchMode=yes "root@$VPS_HOST" "cd $APP_DIR/deploy && echo deployed commit: \$(cat $APP_DIR/DEPLOYED_COMMIT 2>/dev/null) && docker compose ps && df -h / && free -m"
 
       - name: Logs
-        if: inputs.task == 'logs'
+        if: env.TASK == 'logs'
         run: |
           ssh -o BatchMode=yes "root@$VPS_HOST" "cd $APP_DIR/deploy && docker compose logs --tail 200 --no-color"
 
       - name: Access code
-        if: inputs.task == 'access-code'
+        if: env.TASK == 'access-code'
         run: |
           ssh -o BatchMode=yes "root@$VPS_HOST" "cd $APP_DIR/deploy && docker compose exec -T learnharness cat /data/phone-access-code"
