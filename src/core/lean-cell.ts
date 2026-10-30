@@ -190,7 +190,7 @@ export function gradeLeanCheck(ex: ResolvedLeanExercise, proof: string, result: 
 	const report = result.messages.find((m) => m.severity === "information" && m.pos?.line === axiomsLine);
 	const axioms = report ? parseAxiomsReport(report.data) : null;
 	const usesSorry =
-		result.messages.some((m) => m.severity === "warning" && /declaration uses 'sorry'/.test(m.data)) ||
+		result.messages.some((m) => m.severity === "warning" && /declaration uses ['`]sorry['`]/.test(m.data)) ||
 		(axioms?.includes("sorryAx") ?? false);
 	if (usesSorry) return { passed: false, reason: "sorry", ...base, ...(axioms ? { axioms } : {}) };
 	// No report means Lean never reached the end of the file (e.g. `#exit`).

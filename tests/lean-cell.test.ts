@@ -79,6 +79,8 @@ test("errors fail, with lines relative to the proof", () => {
 
 test("sorry, extra axioms, a missing report and timeouts fail", () => {
 	assert.equal(gradeLeanCheck(ex, proof, result([{ severity: "warning", pos: { line: 3, column: 8 }, data: "declaration uses 'sorry'" }, report("'x' depends on axioms: [sorryAx]")])).reason, "sorry");
+	// Lean 4.35 quotes with backticks; the warning alone is enough.
+	assert.equal(gradeLeanCheck(ex, proof, result([{ severity: "warning", pos: { line: 3, column: 8 }, data: "declaration uses `sorry`" }, report("'x' does not depend on any axioms")])).reason, "sorry");
 	const native = gradeLeanCheck(ex, proof, result([report("'x' depends on axioms: [propext, Lean.ofReduceBool]")]));
 	assert.equal(native.reason, "axioms");
 	assert.deepEqual(native.disallowedAxioms, ["Lean.ofReduceBool"]);

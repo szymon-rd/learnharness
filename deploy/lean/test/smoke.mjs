@@ -136,7 +136,10 @@ async function lsp() {
 	const until = (what, predicate, ms) =>
 		new Promise((resolve) => {
 			if (predicate()) return resolve();
-			const timer = setTimeout(() => fail(`timed out waiting for ${what}`), ms);
+			const timer = setTimeout(
+				() => fail(`timed out waiting for ${what}; Lean finished: ${progressDone}; diagnostics: ${JSON.stringify([...diagnostics.values()]).slice(0, 3000)}`),
+				ms,
+			);
 			const l = () => {
 				if (predicate()) {
 					clearTimeout(timer);
