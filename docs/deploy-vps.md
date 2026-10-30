@@ -4,14 +4,15 @@ This puts the LearnHarness server on a Linux server you rent, so the Android app
 
 ```
  Android app ──HTTPS──▶ Caddy (ports 80/443) ──▶ LearnHarness (phone server) ──▶ /data volume
-                        on your VPS                                              sessions, graph, keys
+                        on your VPS     │                                         sessions, graph, keys
+                                        └─/lean/lsp─▶ Lean + Mathlib (code cells, no internet)
 ```
 
 Every page and API call needs the access code, which a device enters once.
 
 ## What you need
 
-- A Linux VPS (Ubuntu or Debian), x86-64 or ARM, with **2 GB of RAM or more**, such as Hetzner, DigitalOcean or OVH.
+- A Linux VPS (Ubuntu or Debian), x86-64 or ARM, with **2 GB of RAM or more**, such as Hetzner, DigitalOcean or OVH. With Lean code cells (included by default), use **8 GB of RAM** (Hetzner CX33 or similar) and about **15 GB of free disk**: Lean with Mathlib needs about 1.5 GB of memory per open cell, and its image is several GB.
 - Ports **80 and 443** open to the internet. Caddy uses port 80 to get the certificate.
 - A hostname that points at the server. Either:
   - **No domain:** use `<server-ip>.sslip.io`, for example `203.0.113.7.sslip.io`. It works as is, with nothing to register.
@@ -34,7 +35,7 @@ cd deploy
 cp .env.example .env
 nano .env                               # set LH_HOST, e.g. LH_HOST=203.0.113.7.sslip.io
 
-# 4. Build and start (first build takes 5–10 minutes)
+# 4. Build and start (first build takes 5–10 minutes; 10–20 more for Lean + Mathlib)
 docker compose up -d --build
 
 # 5. The access code for your phone
@@ -71,6 +72,15 @@ Then **Actions → Deploy to VPS → Run workflow**, with the task:
 | `access-code` | print the phone access code in the run's log |
 
 The data stays in the Docker volumes across deploys. Anyone who can run workflows in the repository can control the server through this key; remove the key line from `authorized_keys` to revoke it.
+
+## Lean code cells
+
+The `lean` service runs Lean 4 with Mathlib for code cells: Lean exercises the tutor can mix in with its checks when a session is about Lean. Turn them on in **Settings → Agent → Code cells: Mixed in** (Off by default). The tutor only uses them in sessions whose plan is marked as a Lean topic, and never two in a row unless you ask.
+
+- In the cell, the theorem statement is locked; you write the proof below it. Lean checks it live: errors are underlined, the goal at the cursor is shown, and the badge says when the proof passes. Type `\to`, `\forall`, `\N`… followed by a space for symbols, or use the symbol bar on a phone.
+- When you submit, the server checks your proof against the exact statement: no errors, no `sorry`, and only the standard axioms (no `native_decide`). The check catches mistakes; a proof written to fool it on purpose is out of scope.
+- Lean runs in its own container with no internet access, as a normal user, on a read-only file system, with a memory cap (`LEAN_MEM_LIMIT`, default `3g`). One language server runs at a time (`LEAN_MAX_SESSIONS`, default 1; set 2 on an 8 GB server for two open cells). Idle servers stop after 10 minutes.
+- To leave Lean out on a small server: `docker compose up -d --build learnharness caddy`. The setting then shows that Lean is not available.
 
 ## Day to day
 
@@ -116,4 +126,5 @@ From then on the server copy and the desktop copy are separate. They do not sync
 
 - **The certificate fails or the browser shows a TLS error.** Check that `LH_HOST` resolves to this server (`ping <LH_HOST>`) and that ports 80 and 443 are open. Then look at `docker compose logs caddy`.
 - **"This device is not paired"** in API errors means the browser lost the cookie. Open `https://<LH_HOST>/pair` and enter the code again.
+- **A code cell says "Lean offline"** or the badge never leaves "Starting Lean…": check `docker compose ps lean` and `docker compose logs lean`. The first check after a restart takes a few seconds while Lean loads Mathlib. If the container was killed for memory, raise `LEAN_MEM_LIMIT` in `deploy/.env` (and the server's RAM).
 - **The build runs out of memory** on a 1 GB server. Add swap (`fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`) or use a bigger plan.
