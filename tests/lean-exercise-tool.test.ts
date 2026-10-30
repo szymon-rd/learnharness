@@ -187,3 +187,53 @@ describe("the server grades the submitted proof", () => {
 		await assert.rejects(gradeLeanAnswer(exercise, submitted("  omega"), null), (e: unknown) => e instanceof LeanAnswerError && e.status === 503);
 	});
 });
+
+describe("Lean problems in practice sessions", async () => {
+	const { problemTool } = await import("../src/agent/tools/practice.ts");
+	const { newThinkingMessage } = await import("../src/core/native-messages.ts");
+	const { parseChatInput } = await import("../src/core/input-events.ts");
+	const lean = { statement: exercise.statement, referenceProof: "  omega" };
+	const base = { statement: "Prove it in Lean.", mode: "recall", modelSolution: "omega closes it." };
+
+	function practiceChat(previousLean: boolean): string {
+		const chat = chatStore.createChat("Practice", "practice");
+		created.push(chat.id);
+		chatStore.saveMessages(chat.id, [
+			{ id: "g", role: "custom", customType: "graph-context", content: "", display: true, details: { propositions: [{ id: "n_lean", name: "x", statement: "y" }], chains: [] }, timestamp: 1 } as never,
+			...(previousLean ? [{ id: "a", role: "assistant", content: [{ type: "toolCall", id: "p0", name: "problem", arguments: { ...base, lean } }], timestamp: 2 } as never] : []),
+		]);
+		return chat.id;
+	}
+	const run = async (chatId: string, input: unknown, sourced: boolean) => {
+		const ctx = { chatId, chatStore, lean: { check: stubLean(), leanSourced: (ids: string[]) => sourced && ids.includes("n_lean") } };
+		const tool = problemTool({ problemActive: false }, undefined, ctx);
+		assert.ok(Value.Check(tool.parameters, input), "schema-valid");
+		const r = (await tool.execute("p1", input as never)) as { isError?: boolean; details: { problems?: string[] } | null };
+		return { ok: !r.isError, problems: (r.details?.problems ?? []).join("\n") };
+	};
+
+	it("poses a Lean problem when the material comes from a Lean session", async () => {
+		assert.deepEqual(await run(practiceChat(false), { ...base, lean }, true), { ok: true, problems: "" });
+	});
+	it("refuses Lean problems for material from other sessions", async () => {
+		const r = await run(practiceChat(false), { ...base, lean }, false);
+		assert.equal(r.ok, false);
+		assert.match(r.problems, /only for material from Lean sessions/);
+		assert.equal((await run(practiceChat(false), base, false)).ok, true, "plain problems still pose");
+	});
+	it("refuses two Lean problems in a row unless the learner asked", async () => {
+		const chatId = practiceChat(true);
+		assert.match((await run(chatId, { ...base, lean }, true)).problems, /previous problem was already a Lean problem/);
+		assert.equal((await run(chatId, { ...base, lean: { ...lean, learnerAsked: true } }, true)).ok, true);
+	});
+	it("checks the reference proof", async () => {
+		assert.match((await run(practiceChat(false), { ...base, lean: { ...lean, referenceProof: "  simp" } }, true)).problems, /referenceProof does not pass/);
+	});
+	it("a submission may carry only a proof, and the marker shows the verdict", () => {
+		assert.deepEqual(parseChatInput({ type: "thinking", problemCallId: "p1", text: "", proof: "  omega", lean: { forged: true } }), { type: "thinking", problemCallId: "p1", text: "", proof: "  omega" });
+		assert.throws(() => parseChatInput({ type: "thinking", problemCallId: "p1", text: " " }));
+		const m = newThinkingMessage("p1", "", { proof: "  simp", summary: "Lean reports an error.", verdict: { passed: false, reason: "errors", ms: 1, errors: [{ line: 1, message: "simp made no progress" }] } });
+		assert.match(m.content as string, /Submitted Lean proof:\n {2}simp/);
+		assert.match(m.content as string, /Lean verdict: does not pass — Lean reports an error\.\n- proof line 1: simp made no progress/);
+	});
+});

@@ -20,6 +20,27 @@ export class LeanAnswerError extends Error {
 
 const MAX_PROOF_CHARS = 50_000;
 
+/** Grade a proof against an exercise taken from a persisted call (the
+ *  lean_exercise input, or a practice problem's `lean` block). */
+export async function gradeLeanProof(
+	exerciseInput: unknown,
+	proof: string,
+	check: LeanChecker | null,
+): Promise<{ verdict: import("../core/lean-cell.ts").LeanVerdict; summary: string; referenceProof?: string }> {
+	const input = exerciseInput as { question?: string; prelude?: string; statement?: string; starter?: string; referenceProof?: string };
+	if (typeof input?.statement !== "string") throw new LeanAnswerError("The code cell's exercise is malformed.", 400);
+	if (proof.length > MAX_PROOF_CHARS) throw new LeanAnswerError("The proof is too long.", 400);
+	if (!check) throw new LeanAnswerError("Lean is not available on this server.", 503);
+	const exercise = resolveLeanExercise({ question: input.question ?? "", prelude: input.prelude, statement: input.statement, starter: input.starter });
+	let verdict;
+	try {
+		verdict = await checkLeanProof(check, exercise, proof);
+	} catch (err) {
+		throw new LeanAnswerError(`Lean could not check the proof: ${(err as Error).message} Try again in a moment.`, 503);
+	}
+	return { verdict, summary: verdictSummary(verdict), ...(typeof input.referenceProof === "string" ? { referenceProof: input.referenceProof } : {}) };
+}
+
 /** The graded answer for the pending lean_exercise call `callInput`.
  *  Dismissals pass through untouched. */
 export async function gradeLeanAnswer(
@@ -33,15 +54,7 @@ export async function gradeLeanAnswer(
 		throw new LeanAnswerError("The code cell's exercise is malformed.", 400);
 	}
 	const proof = typeof answer.text === "string" ? answer.text : "";
-	if (proof.length > MAX_PROOF_CHARS) throw new LeanAnswerError("The proof is too long.", 400);
-	if (!check) throw new LeanAnswerError("Lean is not available on this server.", 503);
-	const exercise = resolveLeanExercise({ question: input.question, prelude: input.prelude, statement: input.statement, starter: input.starter });
-	let verdict;
-	try {
-		verdict = await checkLeanProof(check, exercise, proof);
-	} catch (err) {
-		throw new LeanAnswerError(`Lean could not check the proof: ${(err as Error).message} Try again in a moment.`, 503);
-	}
+	const { verdict, summary } = await gradeLeanProof(input, proof, check);
 	return {
 		kind: "lean",
 		tool: "lean_exercise",
@@ -54,7 +67,7 @@ export async function gradeLeanAnswer(
 		lean: {
 			proof,
 			verdict,
-			summary: verdictSummary(verdict),
+			summary,
 			...(typeof input.referenceProof === "string" ? { referenceProof: input.referenceProof } : {}),
 		},
 		answeredAt: new Date().toISOString(),

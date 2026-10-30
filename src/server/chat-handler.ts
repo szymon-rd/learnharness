@@ -44,10 +44,10 @@ import { beginTurn, endTurn } from "./turn-liveness.ts";
 import { applyParkedDismissal } from "./dismissal-park.ts";
 import { registerTurn, rememberTurnFailure, unregisterTurn } from "./turn-runs.ts";
 import { persistTurn, triggerExtraction, TurnPersistenceError } from "./turn-service.ts";
-import { hasProbeDone, danglingQuestionOf } from "../core/native-messages.ts";
+import { hasProbeDone, danglingQuestionOf, activeProblemOf } from "../core/native-messages.ts";
 import { LEAN_EXERCISE_TOOL } from "../core/lean-cell.ts";
 import { codeCellsEnabled } from "../core/settings-resolution.ts";
-import { gradeLeanAnswer, LeanAnswerError } from "./lean-answer.ts";
+import { gradeLeanAnswer, gradeLeanProof, LeanAnswerError } from "./lean-answer.ts";
 import { leanChecker } from "./lean-service.ts";
 import { composeInstructions } from "../agent/teacher-agent.ts";
 import { ensureCompacted, kickCompaction, effectiveThresholdTokens } from "./compaction.ts";
@@ -83,6 +83,23 @@ import type {CallUsage} from "../core/contracts.ts";
  * wake pipeline's server-side steers (src/server/jobs.ts) — one code path
  * for write-ahead persistence, turn liveness, and the turn services.
  */
+
+/** Did any of these propositions come up in a teaching session whose plan
+ *  was marked as a Lean topic? (Practice sessions have no plan; their
+ *  material decides whether Lean problems belong — owner, 2026-10-30.) */
+function leanSourcedPropositions(ids: string[]): boolean {
+	if (ids.length === 0) return false;
+	const wanted = new Set(ids);
+	const checked = new Map<string, boolean>();
+	for (const node of stores.graphStore.readNodes()) {
+		if (!wanted.has(node.id)) continue;
+		for (const point of node.provenance) {
+			if (!checked.has(point.chatId)) checked.set(point.chatId, stores.chatStore.getChat(point.chatId)?.tree?.codeCells === true);
+			if (checked.get(point.chatId)) return true;
+		}
+	}
+	return false;
+}
 
 function settlementErrorText(error: unknown): string {
 	return error instanceof TurnPersistenceError ? error.message : "An error occurred.";
@@ -255,6 +272,25 @@ export async function handleChatInput(
 				throw err;
 			}
 			record = stores.chatStore.getChat(chatId) ?? record;
+		}
+	}
+	// The practice twin: a submission on a Lean problem carries the proof;
+	// the verdict comes from the persisted problem call's exercise.
+	if (input.type === "thinking" && input.proof !== undefined) {
+		const active = activeProblemOf(record.messages);
+		const exercise = active?.toolCallId === input.problemCallId ? (active.input as { lean?: unknown }).lean : undefined;
+		if (exercise) {
+			try {
+				const graded = await gradeLeanProof(exercise, input.proof, leanChecker());
+				input = { ...input, lean: { proof: input.proof, verdict: graded.verdict, summary: graded.summary } };
+			} catch (err) {
+				if (err instanceof LeanAnswerError) return Response.json({ error: err.message }, { status: err.status });
+				throw err;
+			}
+			record = stores.chatStore.getChat(chatId) ?? record;
+		} else {
+			// Not a Lean problem: the proof field means nothing here.
+			input = { type: "thinking", problemCallId: input.problemCallId, text: input.text };
 		}
 	}
 
@@ -484,6 +520,12 @@ export async function handleChatInput(
 							searchAvailable,
 						},
 						...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
+						// Lean problems (owner, 2026-10-30): the code-cells gate, and
+						// material from a teaching session marked as a Lean topic.
+						...(() => {
+							const check = leanChecker();
+							return check && codeCellsEnabled(effective, true) ? { lean: { check, leanSourced: leanSourcedPropositions } } : {};
+						})(),
 					},
 					agentOpts,
 				)

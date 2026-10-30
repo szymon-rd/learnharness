@@ -292,16 +292,38 @@ export function newGraphContextMessage(picks: readonly GraphContextPick[], chain
  *  content label is the single "Your thinking"; `details` keeps the raw
  *  payload for the transcript card. One problem may carry many
  *  submissions. */
-export function newThinkingMessage(problemCallId: string, text: string): LhMarkerMessage {
+export function newThinkingMessage(problemCallId: string, text: string, lean?: PracticeLeanSubmission): LhMarkerMessage {
+	// A Lean problem's submission (owner, 2026-10-30) carries the proof and
+	// the server's verdict: the model reads them right under the thinking.
+	const parts = [text ? `${THINKING_LABEL}:\n${text}` : `${THINKING_LABEL}: (none)`];
+	if (lean) {
+		parts.push(`Submitted Lean proof:\n${lean.proof || "(empty)"}`);
+		const verdict = lean.verdict ? leanVerdictLines(lean) : "Lean verdict: not checked (no Lean verdict for this submission).";
+		parts.push(verdict);
+	}
 	return {
 		id: newMessageId(),
 		role: "custom",
 		customType: "practice-thinking",
-		content: `${THINKING_LABEL}:\n${text}`,
+		content: parts.join("\n\n"),
 		display: true,
-		details: { problemCallId, text },
+		details: { problemCallId, text, ...(lean ? { lean } : {}) },
 		timestamp: Date.now(),
 	};
+}
+
+/** A practice submission's Lean half: the proof and the server's verdict. */
+export interface PracticeLeanSubmission {
+	proof: string;
+	verdict?: import("./lean-cell.ts").LeanVerdict;
+	summary?: string;
+}
+
+function leanVerdictLines(lean: PracticeLeanSubmission): string {
+	const v = lean.verdict!;
+	const lines = [`Lean verdict: ${v.passed ? "passes" : "does not pass"} — ${lean.summary ?? ""}`.trim()];
+	for (const e of v.errors) lines.push(`- ${e.line > 0 ? `proof line ${e.line}` : "statement"}: ${e.message}`);
+	return lines.join("\n");
 }
 
 /** The learner's explicit move-on signal (owner round 16): appended by
