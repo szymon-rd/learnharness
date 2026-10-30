@@ -263,6 +263,12 @@ export interface AgentSettings {
 	 *  tool-toggles map. Absent = enabled (the toggle discipline); the
 	 *  effective gate composes graph.enabled AND this switch. */
 	graphTools?: { enabled?: boolean };
+	/** Code cells (owner, 2026-10-30): "Off" | "Mixed in" — whether the
+	 *  teacher may pose Lean exercises (lean_exercise) next to its quizzes.
+	 *  Its own subsection like graphTools, but absent = OFF: code cells are
+	 *  opt-in. The tool also needs the Lean service (LH_LEAN_URL) and a plan
+	 *  marked as a Lean topic; consumers use codeCellsEnabled. */
+	codeCells?: { enabled?: boolean };
 	/** System-prompt override SWITCHES keyed by segment path (absent key =
 	 *  off). Switch-on requires the override file to exist (enforced by the
 	 *  route); the switch is explicit so users keep a file on disk but run
@@ -536,6 +542,13 @@ function sanitizeAgent(raw: Record<string, unknown>): AgentSettings {
 		const enabled = (raw.graphTools as Record<string, unknown>).enabled;
 		if (enabled === undefined) out.graphTools = {};
 		else if (typeof enabled === "boolean") out.graphTools = { enabled };
+	}
+	// Code cells: same lenient read side (a bad shape drops the key and the
+	// default OFF resumes).
+	if (raw.codeCells !== null && typeof raw.codeCells === "object" && !Array.isArray(raw.codeCells)) {
+		const enabled = (raw.codeCells as Record<string, unknown>).enabled;
+		if (enabled === undefined) out.codeCells = {};
+		else if (typeof enabled === "boolean") out.codeCells = { enabled };
 	}
 	return out;
 }

@@ -84,6 +84,9 @@ export interface EffectiveSettings {
 		/** Prober graph tools (wave 7): passthrough delta as stored —
 		 * absent/undefined enabled = ON; consumers use graphToolsEnabled. */
 		graphTools: { enabled?: boolean };
+		/** Code cells: passthrough delta as stored — absent/undefined
+		 *  enabled = OFF; consumers use codeCellsEnabled. */
+		codeCells: { enabled?: boolean };
 	};
 	/** The resolved strong/cheap/vision slots: each tier's concrete model or
 	 *  NULL when the tier holds no model (no factory floor — BYOK all the
@@ -187,6 +190,7 @@ export function resolveSettings(record: UserSettings | null): EffectiveSettings 
 			prompts: agent.prompts ?? {},
 			search: agent.search ?? {},
 			graphTools: agent.graphTools ?? {},
+			codeCells: agent.codeCells ?? {},
 		},
 		models: {
 			strong: resolveSlot(modelsSection.strong),
@@ -259,3 +263,16 @@ export function graphToolsEnabled(effective: {
 }
 
 
+
+/**
+ * The CODE CELLS gate (owner, 2026-10-30): the "Code cells" setting
+ * ("Mixed in" = enabled; absent = Off) AND a configured Lean service.
+ * Gates registration of the teacher's lean_exercise tool; the plan's own
+ * Lean-topic mark is checked per call by the tool.
+ */
+export function codeCellsEnabled(
+	effective: { agent: { codeCells: { enabled?: boolean } } },
+	leanServiceConfigured: boolean,
+): boolean {
+	return leanServiceConfigured && effective.agent.codeCells.enabled === true;
+}

@@ -45,6 +45,10 @@ import { applyParkedDismissal } from "./dismissal-park.ts";
 import { registerTurn, rememberTurnFailure, unregisterTurn } from "./turn-runs.ts";
 import { persistTurn, triggerExtraction, TurnPersistenceError } from "./turn-service.ts";
 import { hasProbeDone, danglingQuestionOf } from "../core/native-messages.ts";
+import { LEAN_EXERCISE_TOOL } from "../core/lean-cell.ts";
+import { codeCellsEnabled } from "../core/settings-resolution.ts";
+import { gradeLeanAnswer, LeanAnswerError } from "./lean-answer.ts";
+import { leanChecker } from "./lean-service.ts";
 import { composeInstructions } from "../agent/teacher-agent.ts";
 import { ensureCompacted, kickCompaction, effectiveThresholdTokens } from "./compaction.ts";
 import { catalogContextLimits, refreshConnectionCatalog } from "./model-catalog.ts";
@@ -233,6 +237,25 @@ export async function handleChatInput(
 		const envelope = providerKeyMissingEnvelope(conversation.provider, ["strong"]);
 		console.info(`[chat ${chatId}] turn refused — ${JSON.stringify(envelope)}`);
 		return Response.json(envelope, { status: 503 });
+	}
+
+	// LEAN CODE CELLS (owner, 2026-10-30 — "Locked + checked"): an answer
+	// to a lean_exercise carries only the learner's proof; the verdict is
+	// computed HERE from the persisted call (the exact locked statement),
+	// never taken from the client. Placement: after the model/key gates (a
+	// refused turn wastes no Lean run), before every write — a Lean failure
+	// refuses the answer with nothing appended, so the learner can resubmit.
+	if (input.type === "answer") {
+		const pending = danglingQuestionOf(record.messages);
+		if (pending?.toolCallId === input.toolCallId && pending.tool === LEAN_EXERCISE_TOOL) {
+			try {
+				input = { ...input, answer: await gradeLeanAnswer(pending.input, input.answer, leanChecker()) };
+			} catch (err) {
+				if (err instanceof LeanAnswerError) return Response.json({ error: err.message }, { status: err.status });
+				throw err;
+			}
+			record = stores.chatStore.getChat(chatId) ?? record;
+		}
 	}
 
 	// THE COMPACTION GATE (owner round 14, 2026-10-05 — the structural
@@ -474,6 +497,11 @@ export async function handleChatInput(
 						// The registry drop's signal (2026-09-20): no live engine
 						// = no research tool in the teacher's registry.
 						searchAvailable,
+						// Lean code cells: the "Code cells" setting AND a Lean service.
+						...(() => {
+							const lean = leanChecker();
+							return lean && codeCellsEnabled(effective, true) ? { lean } : {};
+						})(),
 					},
 					agentOpts,
 				)

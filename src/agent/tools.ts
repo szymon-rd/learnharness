@@ -24,6 +24,8 @@ import { lsTool } from "./tools/ls.ts";
 import { findTool } from "./tools/find.ts";
 import { grepTool } from "./tools/grep.ts";
 import { healToolRecord } from "./tools/heal.ts";
+import { leanExerciseToolFor } from "./tools/lean.ts";
+import type { LeanChecker } from "../core/lean-cell.ts";
 import type { GraphStore } from "../core/ports.ts";
 
 export { jobTools };
@@ -400,6 +402,11 @@ export interface TeacherToolContext extends PlanToolContext {
 	spawn: (job: JobRecord, input: ResearchInput | DemoInput | VisualInput | PdfInput) => void;
 	/** Retained search-status seam; research dispatch is available keylessly. */
 	searchAvailable?: () => boolean;
+	/** Lean code cells (owner, 2026-10-30): present only when the code-cells
+	 *  gate opened (codeCellsEnabled — the "Mixed in" setting AND a Lean
+	 *  service). Present = lean_exercise is registered and plan_init gains
+	 *  its codeCells mark. */
+	lean?: LeanChecker;
 }
 
 /**
@@ -457,7 +464,10 @@ export function createTeacherTools(
 			ls: lsTool,
 			find: findTool,
 			grep: grepTool,
-			...planTools(ctx),
+			...planTools(ctx, { codeCells: ctx.lean !== undefined }),
+			...(ctx.lean
+				? { lean_exercise: leanExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, lean: ctx.lean }, (nodeId) => nodeIdProblem(ctx, nodeId)) }
+				: {}),
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),
 		},
 		withoutMechanics(enabled),
