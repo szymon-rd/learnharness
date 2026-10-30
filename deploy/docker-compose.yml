@@ -1,4 +1,5 @@
-# LearnHarness on your own server: the app plus Caddy for automatic HTTPS.
+# LearnHarness on your own server: the app, Caddy for automatic HTTPS, and
+# Lean + Mathlib for code cells.
 #   cp .env.example .env    # set LH_HOST
 #   docker compose up -d --build
 # See docs/deploy-vps.md.
@@ -10,10 +11,32 @@ services:
     restart: unless-stopped
     environment:
       LH_PUBLIC_URL: https://${LH_HOST:?Set LH_HOST in deploy/.env (see .env.example)}
+      LH_LEAN_URL: http://lean:3300
     volumes:
       - learnharness-data:/data
     # Chromium (interactive demos) needs more shared memory than Docker's 64 MB default.
     shm_size: 1gb
+    networks: [default, lean]
+
+  # Lean 4 + Mathlib for code cells (deploy/lean). No internet access (the
+  # "lean" network is internal), an unprivileged user, no capabilities and a
+  # memory cap: cells can run arbitrary Lean code. Writes stay inside the
+  # container and are gone after a restart.
+  lean:
+    image: learnharness-lean:${LEAN_TAG:-local}
+    build: ./lean
+    restart: unless-stopped
+    environment:
+      LH_PUBLIC_URL: https://${LH_HOST:?Set LH_HOST in deploy/.env (see .env.example)}
+      # Language servers at once (each needs about 1.5 GB with Mathlib).
+      LEAN_MAX_SESSIONS: ${LEAN_MAX_SESSIONS:-1}
+    networks: [lean]
+    tmpfs:
+      - /tmp:size=256m
+    mem_limit: ${LEAN_MEM_LIMIT:-3g}
+    pids_limit: 512
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
 
   caddy:
     image: caddy:2.10
@@ -30,6 +53,12 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    networks: [default, lean]
+
+networks:
+  default:
+  lean:
+    internal: true
 
 volumes:
   learnharness-data:

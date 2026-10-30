@@ -59,7 +59,23 @@ const planInitInput = Type.Object({
 	}),
 });
 
-export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> {
+/** plan_init with the Lean-topic mark (owner, 2026-10-30): present only
+ *  while the teacher holds lean_exercise, so the field never appears to a
+ *  teacher that cannot pose code cells. */
+const planInitInputWithCodeCells = Type.Object({
+	mermaid: planInitInput.properties.mermaid,
+	codeCells: Type.Optional(
+		Type.Boolean({
+			description:
+				"true when this session is about Lean itself — writing Lean programs or proving theorems in Lean — so Lean " +
+				"code cells (lean_exercise) belong in it. Leave it out for everything else, including maths, physics or logic " +
+				"taught without Lean.",
+		}),
+	),
+});
+
+export function planTools(ctx: PlanToolContext, options: { codeCells?: boolean } = {}): Record<string, AgentTool<any>> {
+	const parameters = options.codeCells ? planInitInputWithCodeCells : planInitInput;
 	return {
 		plan_init: {
 			name: "plan_init",
@@ -70,8 +86,9 @@ export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> 
 				"A mermaid graph block (any direction): one node per line (`slug[Short Title]` — slugs are permanent lowercase ids: a-z, 0-9, hyphens/underscores), " +
 				"`-->` edges meaning 'from must be understood before to' (chains fine). 5–15 nodes: a map, not a syllabus — one reasoning step per node, compress. " +
 				"Every check you fire names the node it assesses via `nodeId`; where the lesson stands derives from those tags.",
-			parameters: planInitInput,
-			execute: serverExecute("plan_init", planInitInput, async ({ mermaid }) => {
+			parameters,
+			execute: serverExecute("plan_init", parameters, async (input: { mermaid: string; codeCells?: boolean }) => {
+				const { mermaid } = input;
 				const { chatId, chatStore } = ctx;
 				const record = chatStore.getChat(chatId);
 				if (!record) return { ok: false, error: `Chat not found: ${chatId}` };
@@ -87,6 +104,7 @@ export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> 
 					// createTree validates the structure (duplicate ids, missing
 					// edge endpoints, self-loops, cycles → PlanTreeError).
 					const next = createTree(parsed.plan.nodes, parsed.plan.edges);
+					if (options.codeCells && input.codeCells === true) next.codeCells = true;
 					chatStore.saveTree(chatId, next);
 					// Context diet: content = the validated nodeIds + the reminder (the
 				// ids just became binding for every quiz/explain call); details =
@@ -96,6 +114,7 @@ export function planTools(ctx: PlanToolContext): Record<string, AgentTool<any>> 
 						text: JSON.stringify({
 							ok: true,
 							nodeIds: next.nodes.map((n) => n.id),
+							...(options.codeCells ? { codeCells: next.codeCells === true } : {}),
 							reminder: PLAN_NODE_IDS_REMINDER,
 						}),
 						details: { ok: true, tree: next },

@@ -19,6 +19,7 @@
 
 import { Type, type Static } from "typebox";
 import { stripModelValueDebris } from "./value-debris.ts";
+import type { LeanVerdict } from "./lean-cell.ts";
 
 // ─── shared types ───────────────────────────────────────────────────────────
 
@@ -361,6 +362,11 @@ export function explainInputProblems(input: { correctAnswer: string }): string[]
  *  whichever is armed. */
 export const QUIZ_TOOL_NAMES = ["quiz", "explain"] as const;
 
+/** Every teach-phase tool whose `nodeId` names the plan node it checks:
+ *  the quizzing tools plus the Lean code cell (owner, 2026-10-30). The
+ *  teach seam and the plan-position fold read these. */
+export const NODE_TAGGED_TOOL_NAMES = [...QUIZ_TOOL_NAMES, "lean_exercise"] as const;
+
 /** The TEACHER's quiz declaration (base + the position field). */
 export const quizInputSchema = quizInputObject;
 
@@ -404,7 +410,19 @@ export interface OptionAnswer {
 	index: number; // 1-based display index
 }
 
-export type QuestionKind = "quiz" | "ask" | "explain";
+export type QuestionKind = "quiz" | "ask" | "explain" | "lean";
+
+/** A Lean code cell's answer (kind "lean"): the learner's proof and the
+ *  server's verdict on it (src/server/lean-answer.ts — never the client's). */
+export interface LeanAnswerDetail {
+	proof: string;
+	/** The server verdict (core/lean-cell.ts LeanVerdict). */
+	verdict: LeanVerdict;
+	/** One-line verdict text (verdictSummary). */
+	summary: string;
+	/** The teacher's reference proof, for the answered card. */
+	referenceProof?: string;
+}
 export type SelectMode = "single-select" | "multi-select";
 export type QuestionMode = SelectMode | "text";
 
@@ -468,6 +486,8 @@ export interface QuestionAnswerData {
 	committed?: string; // explain only (rendering): the model's committed answer
 	explanation?: string; // quiz only (rendering)
 	dismissed?: boolean;
+	/** lean only: the proof and the server's verdict. */
+	lean?: LeanAnswerDetail;
 	answeredAt: string;
 }
 
@@ -798,5 +818,14 @@ export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, un
 	const thinking = ad.thinking ?? ad.note;
 	if (thinking) out.thinking = thinking;
 	if (ad.readingThinking) out.thinkingWhileReading = ad.readingThinking;
+	// Lean code cell: the proof he submitted and Lean's verdict on it (the
+	// errors with proof-relative lines; the reference proof is the
+	// teacher's own, never echoed).
+	if (ad.lean) {
+		out.proof = ad.lean.proof;
+		out.verdict = ad.lean.summary;
+		if (ad.lean.verdict.errors.length) out.errors = ad.lean.verdict.errors;
+		if (ad.lean.verdict.disallowedAxioms?.length) out.disallowedAxioms = ad.lean.verdict.disallowedAxioms;
+	}
 	return out;
 }

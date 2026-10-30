@@ -121,6 +121,12 @@ export function composeQuizMechanics(agent: AgentSettings | undefined, mechanics
  *  agent section — never in the tool-toggles map (owner ruling). Absent =
  *  ON (the toggle discipline); the write is explicit either way, so an
  *  explicit-off record stays visible as stored. Pure — exported for tests. */
+/** Compose the "Code cells" control (owner, 2026-10-30): Off | Mixed in,
+ *  its own agent subsection; absent = Off. Pure — exported for tests. */
+export function composeCodeCells(agent: AgentSettings | undefined, on: boolean): AgentSettings {
+	return { ...agent, codeCells: { enabled: on } };
+}
+
 export function composeGraphTools(agent: AgentSettings | undefined, on: boolean): AgentSettings {
 	return { ...agent, graphTools: { enabled: on } };
 }
@@ -308,6 +314,15 @@ export function AgentSection({
 	 *  row), which kind. */
 	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "search"; kind: "model" | "thinking" | "engine" } | null>(null);
 	const menuAnchorRef = useRef<HTMLSpanElement>(null);
+
+	/** Lean for code cells (/api/lean/status): null while loading. */
+	const [lean, setLean] = useState<{ available: boolean; reason?: string; mathlib?: string | null } | null>(null);
+	useEffect(() => {
+		fetch("/api/lean/status")
+			.then((r) => r.json())
+			.then(setLean)
+			.catch(() => setLean({ available: false, reason: "Could not reach the server." }));
+	}, []);
 
 	const refreshSearch = () =>
 		fetch("/api/search")
@@ -750,6 +765,51 @@ export function AgentSection({
 											)}
 										>
 											{m === "choice" ? "Multiple choice" : "Free recall"}
+										</button>
+									);
+								})}
+							</div>
+						</SettingsRow>
+					);
+				})()}
+				{/* Code cells (owner, 2026-10-30): Off | Mixed in. "Mixed in" lets the
+				    teacher add Lean exercises among its checks — only in sessions
+				    about Lean (the plan's own mark). Needs the Lean service. */}
+				{(() => {
+					const on = agent?.codeCells?.enabled === true;
+					const unavailable = lean !== null && !lean.available;
+					return (
+						<SettingsRow
+							label="Code cells"
+							hint={
+								unavailable
+									? (lean?.reason ?? "Lean is not available on this server.")
+									: "Lean exercises among the checks, only when a session is about Lean"
+							}
+							testid="code-cells-row"
+						>
+							<div
+								role="radiogroup"
+								aria-label="Code cells"
+								className={cn("flex rounded-lg border border-border/60 bg-muted/30 p-0.5", unavailable && !on && "opacity-50")}
+							>
+								{([false, true] as const).map((value) => {
+									const active = value === on;
+									return (
+										<button
+											key={String(value)}
+											type="button"
+											role="radio"
+											aria-checked={active}
+											disabled={unavailable && value && !on}
+											data-testid={`code-cells-${value ? "mixed" : "off"}`}
+											onClick={() => onSectionChange(composeCodeCells(agent, value))}
+											className={cn(
+												"h-8 rounded-md px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed",
+												active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+											)}
+										>
+											{value ? "Mixed in" : "Off"}
 										</button>
 									);
 								})}

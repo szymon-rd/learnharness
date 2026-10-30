@@ -27,6 +27,15 @@ import { activeProblemOf } from "../../core/native-messages.ts";
 import type { LhMessage } from "../../core/native-messages.ts";
 import { concludeResult, invalidInputResult, problemResult } from "../tool-execute.ts";
 import { healEncodedArguments, healToolRecord } from "./heal.ts";
+import {
+	checkLeanProof,
+	DEFAULT_LEAN_PRELUDE,
+	DEFAULT_LEAN_STARTER,
+	leanExerciseProblems,
+	resolveLeanExercise,
+	verdictSummary,
+	type LeanChecker,
+} from "../../core/lean-cell.ts";
 
 
 /** The record-reading context the gates need (the plan-tools idiom). */
@@ -44,6 +53,12 @@ export interface PracticeToolContext {
 	 *  Each absent context (tests) = absent from the registry. */
 	graph?: GraphToolContext;
 	jobs?: JobToolContext;
+	/** Lean problems (owner, 2026-10-30): present only when the code-cells
+	 *  gate opened (the setting AND a Lean service). `leanSourced` says
+	 *  whether any of the given proposition ids came from a teaching session
+	 *  whose plan was marked as a Lean topic — the practice session's
+	 *  material decides, since practice has no plan of its own. */
+	lean?: { check: LeanChecker; leanSourced: (propositionIds: string[]) => boolean };
 }
 
 /** TURN-SCOPED GATE STATE (the BKT incident, 2026-10-05): the gates used
@@ -94,10 +109,92 @@ export const problemInputObject = Type.Object({
 
 export type ProblemInput = Static<typeof problemInputObject>;
 
+/** The Lean block of a problem (owner, 2026-10-30): the learner proves the
+ *  locked statement in a Lean cell; each submission carries the proof and
+ *  the server's verdict. */
+const problemLeanBlock = Type.Object({
+	prelude: Type.Optional(Type.String({ description: `Locked lines before the statement: imports and \`open\`s. Default: "${DEFAULT_LEAN_PRELUDE}". No \`namespace\`.` })),
+	statement: Type.String({ minLength: 1, description: "Locked: exactly one `theorem <fresh_name> … := by` (or `lemma`)." }),
+	starter: Type.Optional(Type.String({ description: `The editable proof the learner starts from. Default: "${DEFAULT_LEAN_STARTER}".` })),
+	referenceProof: Type.String({ minLength: 1, description: "Your complete tactic proof — checked with Lean before the problem is posed." }),
+	learnerAsked: Type.Optional(Type.Boolean({ description: "True only when the learner asked for another Lean problem right after one." })),
+});
+
+export const problemInputWithLean = Type.Object({
+	...problemInputObject.properties,
+	lean: Type.Optional(
+		Type.Object(problemLeanBlock.properties, {
+			description:
+				"Make this a Lean problem: the learner writes the proof in a Lean code cell (Lean + Mathlib, live feedback); " +
+				"each submission brings his proof and Lean's verdict. Only for material from Lean sessions; never two Lean " +
+				"problems in a row unless he asked (learnerAsked).",
+		}),
+	),
+});
+
+type LeanBlock = Static<typeof problemLeanBlock>;
+
+/** Proposition ids the session was started from (the graph-context picks). */
+function sessionPickIds(messages: readonly LhMessage[]): string[] {
+	const ids: string[] = [];
+	for (const m of messages) {
+		const marker = m as { role?: string; customType?: string; details?: { propositions?: Array<{ id?: unknown }> } };
+		if (marker.role !== "custom" || marker.customType !== "graph-context") continue;
+		for (const p of marker.details?.propositions ?? []) if (typeof p.id === "string") ids.push(p.id);
+	}
+	return ids;
+}
+
+/** Was the newest problem posed before this one a Lean problem? */
+function previousProblemWasLean(messages: readonly LhMessage[], toolCallId: string): boolean {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i] as { role?: string; content?: unknown };
+		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+		for (let j = m.content.length - 1; j >= 0; j--) {
+			const b = m.content[j] as { type?: string; id?: string; name?: string; arguments?: { lean?: unknown } };
+			if (b.type === "toolCall" && b.name === "problem" && b.id !== toolCallId) return b.arguments?.lean !== undefined && b.arguments.lean !== null;
+		}
+	}
+	return false;
+}
+
+/** The Lean gates and the reference-proof check for one pose. */
+async function leanProblemProblems(
+	ctx: PracticeToolContext,
+	toolCallId: string,
+	block: LeanBlock,
+	targets: string[],
+): Promise<string[]> {
+	const lean = ctx.lean!;
+	const messages = ctx.chatStore.getChat(ctx.chatId)?.messages ?? [];
+	const problems = leanExerciseProblems({ question: "problem", ...block });
+	if (!lean.leanSourced([...sessionPickIds(messages), ...targets])) {
+		problems.push("Lean problems are only for material from Lean sessions; none of this session's propositions came from one. Pose it without `lean`.");
+	}
+	if (previousProblemWasLean(messages, toolCallId) && block.learnerAsked !== true) {
+		problems.push("The previous problem was already a Lean problem. Mix them in: pose one without `lean` first, unless the learner asked for another (then set lean.learnerAsked: true).");
+	}
+	if (problems.length) return problems;
+	try {
+		const verdict = await checkLeanProof(lean.check, resolveLeanExercise({ question: "", ...block }), block.referenceProof);
+		if (!verdict.passed) {
+			return [
+				`lean.referenceProof does not pass: ${verdictSummary(verdict)}`,
+				...verdict.errors.map((e) => `${e.line > 0 ? `proof line ${e.line}` : "statement/prelude"}: ${e.message}`),
+			];
+		}
+	} catch (err) {
+		return [`Lean is unavailable right now (${(err as Error).message}). Pose the problem without \`lean\`.`];
+	}
+	return [];
+}
+
 export function problemTool(
 	gate: PracticeGate,
 	graphNodes?: PracticeToolContext["graphNodes"],
+	ctx?: PracticeToolContext,
 ): AgentTool<typeof problemInputObject> {
+	const withLean = ctx?.lean !== undefined;
 	return {
 		name: "problem",
 		label: "problem",
@@ -106,10 +203,10 @@ export function problemTool(
 			"traces and answer commits arrive back as labeled messages. The modelSolution rides this call's " +
 			"arguments and stays hidden from the learner until you conclude (conclude shows it verbatim — the " +
 			"reveal needs no new field). Only one problem may be active — conclude it before posing the next.",
-		parameters: problemInputObject,
+		parameters: (withLean ? problemInputWithLean : problemInputObject) as typeof problemInputObject,
 		executionMode: "sequential",
 		prepareArguments: (args: unknown) => {
-			const healed = healEncodedArguments(args, problemInputObject);
+			const healed = healEncodedArguments(args, withLean ? problemInputWithLean : problemInputObject);
 			// TARGET NORMALIZATION (owner round 9): names silently become ids —
 			// the RECORD carries canonical ids (the mastery trace groups on
 			// them); unresolvable strings pass through for execute to reject.
@@ -133,7 +230,7 @@ export function problemTool(
 			if (normalized.every((t, i) => t === target[i])) return healed as never;
 			return { ...(healed as Record<string, unknown>), target: normalized } as never;
 		},
-		execute: async (_toolCallId, input) => {
+		execute: async (toolCallId, input) => {
 			if (gate.problemActive) {
 				return invalidInputResult("problem", [
 					"a problem is already active — call conclude on it before posing the next one",
@@ -153,6 +250,12 @@ export function problemTool(
 						`target ${JSON.stringify(unknown)} is not a known proposition — targets must be proposition ids from the session context; if the material is not in the map, omit target entirely`,
 					]);
 				}
+			}
+			const leanBlock = (input as { lean?: LeanBlock }).lean;
+			if (leanBlock) {
+				if (!withLean) return invalidInputResult("problem", ["Lean problems are off here (the Code cells setting or Lean is unavailable). Pose it without `lean`."]);
+				const leanProblems = await leanProblemProblems(ctx!, toolCallId, leanBlock, input.target ?? []);
+				if (leanProblems.length) return invalidInputResult("problem", leanProblems);
 			}
 			gate.problemActive = true;
 			return problemResult();
@@ -236,7 +339,7 @@ export function practiceTools(ctx: PracticeToolContext): Record<string, AgentToo
 	// keep their own (target-normalizing) prepareArguments as the composed
 	// inner pass; the double heal is idempotent by construction.
 	return healToolRecord({
-		problem: problemTool(gate, ctx.graphNodes),
+		problem: problemTool(gate, ctx.graphNodes, ctx),
 		conclude: concludeTool(gate),
 		read: readTool,
 		ls: lsTool,

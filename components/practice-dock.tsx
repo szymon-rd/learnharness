@@ -1,12 +1,15 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { cn } from "@/lib/utils";
+import { LeanCell, type LeanCellStatus } from "@/components/lean/lean-cell";
+import { parseLeanExerciseInput } from "@/components/lean/lean-dock";
+import { resolveLeanExercise } from "@/src/core";
 
 /**
  * The practice dock (practice sessions, owner design 2026-10-04): an
@@ -33,12 +36,13 @@ export interface PracticeDockProps {
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
 	 *  mode badge would edge toward announcing the target; dropped). */
-	input: { statement: string };
+	input: { statement: string; lean?: unknown };
 	/** Collapse state, owned by the DockOverlay. */
 	expanded: boolean;
 	onExpand: () => void;
-	/** text — POST {type:"thinking"} (one lane; the register is read from the text). */
-	onSubmit: (text: string) => void;
+	/** text — POST {type:"thinking"} (one lane; the register is read from the
+	 *  text). A Lean problem also sends the proof. */
+	onSubmit: (text: string, proof?: string) => void;
 	/** Escape in the thinking field stops dictation (threaded from the page). */
 	onEscape?: () => void;
 	/** Compaction is running for this chat (owner round 14): the thinking
@@ -54,6 +58,15 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	// discipline): a submit resuming after `await finishDictation()` reads
 	// the tail, never a stale closure.
 	const thinkingRef = useRef("");
+	// A Lean problem (owner, 2026-10-30): the statement's Lean cell; every
+	// submission sends the current proof, and the server checks it.
+	const lean = useMemo(() => {
+		const raw = input.lean as { statement?: unknown } | undefined;
+		const parsed = raw ? parseLeanExerciseInput({ question: input.statement, ...raw }) : null;
+		return parsed ? resolveLeanExercise(parsed) : null;
+	}, [input.lean, input.statement]);
+	const proofRef = useRef(lean?.starter ?? "");
+	const [leanStatus, setLeanStatus] = useState<LeanCellStatus>("connecting");
 
 	useDictationTarget(
 		useCallback(
@@ -70,10 +83,11 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	const submit = () => {
 		if (compactionRunning) return;
 		const text = thinkingRef.current.trim();
-		if (text.length === 0) return;
+		if (text.length === 0 && !lean) return;
 		thinkingRef.current = "";
 		setThinking("");
-		onSubmit(text);
+		if (lean) onSubmit(text, proofRef.current);
+		else onSubmit(text);
 	};
 
 	/* ENTER SUBMITS FROM ANYWHERE (owner round 6, 2026-10-05): dictation
@@ -110,6 +124,19 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				<div className="lh-prose text-[15px]">
 					<ToolContentResponse>{input.statement}</ToolContentResponse>
 				</div>
+				{lean && (
+					<div className="mt-3">
+						<LeanCell
+							exercise={lean}
+							cellId={problemCallId}
+							initialProof={lean.starter}
+							onProofChange={(p) => {
+								proofRef.current = p;
+							}}
+							onStatus={setLeanStatus}
+						/>
+					</div>
+				)}
 			</div>
 
 			{/* The learner's half: Enter SENDS (owner round 2, 2026-10-05);
@@ -157,16 +184,24 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				<div className="flex items-center justify-between gap-2 p-1">
 					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
 						{/* Touch keyboards have no ⇧↵ chord — the hint is keyboard-only. */}
-						{compactionRunning ? "compacting session…" : <span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>}
+						{compactionRunning ? (
+							"compacting session…"
+						) : lean ? (
+							<span className={cn(leanStatus === "passes" && "text-emerald-700 dark:text-emerald-400")}>
+								{leanStatus === "passes" ? "Lean accepts this proof." : "Submit sends your proof and thinking."}
+							</span>
+						) : (
+							<span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>
+						)}
 					</span>
 					<Button
 						type="button"
 						data-testid="practice-send"
-						disabled={thinking.trim().length === 0 || compactionRunning}
+						disabled={(thinking.trim().length === 0 && !lean) || compactionRunning}
 						onClick={() => submit()}
-						className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
+						className="ml-auto h-9 shrink-0 rounded-[6px] px-3.5 text-sm font-medium"
 					>
-						Submit thinking
+						{lean ? "Submit" : "Submit thinking"}
 					</Button>
 				</div>
 			</div>

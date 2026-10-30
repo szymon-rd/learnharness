@@ -6,6 +6,7 @@ import { GlyphMark } from "@/components/ui/glyph-mark";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { cn } from "@/lib/utils";
 import { ToolContentResponse } from "@/components/ai-elements/message";
+import { LeanAnsweredCard } from "@/components/lean/lean-answered-card";
 import type { QuestionAnswerData } from "@/src/core";
 import { answerForPresentation, parseAskInput, parseQuizInput } from "@/src/core";
 
@@ -24,6 +25,7 @@ import { answerForPresentation, parseAskInput, parseQuizInput } from "@/src/core
 export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionAnswerData; input?: unknown }) {
 	const answer = answerForPresentation(savedAnswer, input);
 	const [whyOpen, setWhyOpen] = useState(false); // the tucked explanation (predictions, owner 2026-10-03)
+	if (answer.kind === "lean" && !answer.dismissed) return <LeanAnsweredCard answer={answer} />;
 	if (answer.dismissed) {
 		return (
 			<div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">

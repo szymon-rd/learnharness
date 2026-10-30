@@ -53,6 +53,8 @@ export interface PracticeThinkingData {
 	/** Legacy records (pre 2026-10-05) carry the old two-lane flag; ignored. */
 	commit?: boolean;
 	text: string;
+	/** A Lean problem's submission: the proof and the server's verdict. */
+	lean?: { proof: string; summary?: string; verdict?: { passed: boolean; errors: { line: number; message: string }[] } };
 }
 
 export function ProblemCard({ part }: ArtifactPartProps) {
@@ -294,5 +296,38 @@ export function ThinkingCard({ data }: { data: PracticeThinkingData }) {
 	// 50%-italic quote block on expand. Legacy records' commit flag is
 	// deliberately unread (one lane now). A TRANSCRIPT row (owner round,
 	// 2026-10-07): full-width band + rail, arriving expanded.
-	return <ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} defaultOpen />;
+	const lean = data.lean;
+	return (
+		<>
+			{data.text.trim() && <ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} defaultOpen />}
+			{lean && (
+				<div className="my-1 rounded-xl border bg-card p-4" data-testid="lean-submission-card">
+					<div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						Your proof
+						{!lean.verdict ? (
+							<span className="rounded bg-muted px-1.5 py-0.5 normal-case">checking with Lean…</span>
+						) : lean.verdict.passed ? (
+							<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">passes</span>
+						) : (
+							<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">does not pass</span>
+						)}
+					</div>
+					<pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">{lean.proof || "(empty proof)"}</pre>
+					{lean.verdict && !lean.verdict.passed && (
+						<div className="mt-2 text-sm">
+							{lean.summary}
+							<ul className="mt-1.5 flex flex-col gap-1.5">
+								{lean.verdict.errors.map((e, i) => (
+									<li key={i} className="whitespace-pre-wrap rounded-md bg-red-500/10 px-2.5 py-1.5 font-mono text-xs">
+										<span className="text-muted-foreground">{e.line > 0 ? `line ${e.line}: ` : "statement: "}</span>
+										{e.message}
+									</li>
+								))}
+							</ul>
+						</div>
+					)}
+				</div>
+			)}
+		</>
+	);
 }

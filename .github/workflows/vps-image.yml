@@ -32,7 +32,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build and start
-        run: docker compose up -d --build
+        # Lean (code cells) has its own, much longer check: .github/workflows/lean.yml.
+        run: docker compose up -d --build learnharness caddy
       - name: Wait for HTTPS
         run: |
           for i in $(seq 1 90); do
@@ -45,6 +46,7 @@ jobs:
           set -e
           CODE=$(docker compose exec -T learnharness cat /data/phone-access-code | tr -d '\r\n')
           test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/api/graph)" = 401
+          test "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/lean/lsp)" = 401
           curl -sk https://localhost/chat/new | grep -q "Pair this device"
           HEADERS=$(curl -sk -D - -o /dev/null "https://localhost/pair?code=$CODE")
           echo "$HEADERS" | grep -i "set-cookie: lh_remote=.*Secure"

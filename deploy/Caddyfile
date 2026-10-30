@@ -1,10 +1,3 @@
-# HTTPS certificate for LH_HOST from Let's Encrypt, renewed automatically.
-#
-# Compression only for whole documents (JSON, HTML, CSS, JS, SVG): the
-# graph data alone is ~430 KB of JSON and the app server sends API JSON
-# uncompressed. Live replies (text/event-stream) are deliberately NOT
-# compressed — a compressor would hold back the streamed tokens.
-# Responses the app already compressed pass through untouched.
 {$LH_HOST} {
 	encode {
 		zstd
@@ -18,5 +11,20 @@
 			header Content-Type image/svg+xml*
 		}
 	}
-	reverse_proxy learnharness:3210
+
+	# Lean code cells: the language-server WebSocket, for paired devices only
+	# (the app answers the check; an unpaired device gets its 401).
+	handle /lean/lsp {
+		forward_auth learnharness:3210 {
+			uri /api/lean/authorize
+			# The check is a plain GET, not a WebSocket upgrade.
+			header_up -Upgrade
+			header_up -Connection
+		}
+		reverse_proxy lean:3300
+	}
+
+	handle {
+		reverse_proxy learnharness:3210
+	}
 }
