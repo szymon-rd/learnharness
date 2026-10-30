@@ -37,6 +37,7 @@ import {
 	type Phase3,
 } from "@/src/core";
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
+import { LeanDockForm, parseLeanExerciseInput } from "@/components/lean/lean-dock";
 
 /**
  * The question dock — a pending quiz/ask REPLACES the chat composer: the
@@ -59,7 +60,7 @@ import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-
  */
 
 export interface QuestionDockProps {
-	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall";
+	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise";
 	toolCallId: string;
 	input: QuizToolInput | AskToolInput | ExplainToolInput;
 	/** Collapse state, owned by the DockOverlay (it drives the shell's height morph). */
@@ -122,6 +123,33 @@ export function QuestionDock({
 	// 2026-10-09): probe-phase questions label Probe/Recall in the
 	// composer; teach tools keep the standing labels.
 	const toolLabel = toolName === "probe" ? "Probe" : toolName === "recall" ? "Recall" : undefined;
+	// Lean code cells (owner, 2026-10-30): their own form — the cell, live
+	// Lean, thinking, Submit. Same bar and collapse behavior as the rest.
+	if (toolName === "lean_exercise") {
+		const lean = parseLeanExerciseInput(input);
+		if (!lean) {
+			return (
+				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
+					This exercise arrived malformed — the transcript keeps the retry.
+				</div>
+			);
+		}
+		return (
+			<>
+				{!expanded && <QuestionDockBar toolName="lean_exercise" question={lean.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="Lean" />}
+				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
+					<LeanDockForm
+						toolCallId={toolCallId}
+						input={lean}
+						onSubmit={onSubmit}
+						initialDraft={initialDraft}
+						onSaveDraft={onSaveDraft}
+						compactionRunning={compactionRunning}
+					/>
+				</div>
+			</>
+		);
+	}
 	// Parse, don't cast (src/core/tool-parts.ts): the model authored this
 	// input, and only the schema the tool declared vouches for its shape.
 	// The dock mounts on input-available parts (already validated at the
@@ -198,7 +226,7 @@ export function QuestionDockBar({
 	label,
 	toolLabel,
 }: {
-	toolName: "quiz" | "ask_user_question" | "explain";
+	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise";
 	question: string;
 	onExpand: () => void;
 	variant?: "collapsed" | "reveal";

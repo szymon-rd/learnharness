@@ -145,8 +145,8 @@ describe("registration and the plan mark", () => {
 		assert.equal(codeCellsEnabled({ agent: { codeCells: {} } }, true), false);
 		assert.equal(codeCellsEnabled({ agent: { codeCells: { enabled: true } } }, false), false);
 		assert.equal(codeCellsEnabled({ agent: { codeCells: { enabled: true } } }, true), true);
-		assert.deepEqual(sanitizeUserSettings({ version: 1, agent: { codeCells: { enabled: true } } }).agent?.codeCells, { enabled: true });
-		assert.equal(sanitizeUserSettings({ version: 1, agent: { codeCells: { enabled: "yes" } } }).agent?.codeCells, undefined);
+		assert.deepEqual(sanitizeUserSettings({ version: 1, agent: { codeCells: { enabled: true } } })?.agent?.codeCells, { enabled: true });
+		assert.equal(sanitizeUserSettings({ version: 1, agent: { codeCells: { enabled: "yes" } } })?.agent?.codeCells, undefined);
 		assert.equal(parseAgentSettingsBody({ codeCells: { enabled: "yes" } }).ok, false);
 		const ok = parseAgentSettingsBody({ codeCells: { enabled: true } });
 		assert.ok(ok.ok && ok.settings.codeCells?.enabled === true);

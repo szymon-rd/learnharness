@@ -81,3 +81,7 @@ export * from "./coverage.ts";
 // ONE session→markdown formatter — the extractor's view and the user-facing
 // export share it. Pure, browser-safe.
 export * from "./session-markdown.ts";
+// Lean code cells (owner, 2026-10-30): the cell layout + verdict, and the
+// editor's input abbreviations. Pure, browser-safe.
+export * from "./lean-cell.ts";
+export * from "./lean-abbreviations.ts";
