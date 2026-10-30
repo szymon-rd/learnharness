@@ -79,7 +79,7 @@ The `lean` service runs Lean 4 with Mathlib for code cells: Lean exercises the t
 
 - In the cell, the theorem statement is locked; you write the proof below it. Lean checks it live: errors are underlined, the goal at the cursor is shown, and the badge says when the proof passes. Type `\to`, `\forall`, `\N`… followed by a space for symbols, or use the symbol bar on a phone.
 - When you submit, the server checks your proof against the exact statement: no errors, no `sorry`, and only the standard axioms (no `native_decide`). The check catches mistakes; a proof written to fool it on purpose is out of scope.
-- Lean runs in its own container with no internet access, as a normal user, on a read-only file system, with a memory cap (`LEAN_MEM_LIMIT`, default `3g`). One language server runs at a time (`LEAN_MAX_SESSIONS`, default 1; set 2 on an 8 GB server for two open cells). Idle servers stop after 10 minutes.
+- Lean runs in its own container with no internet access, as a normal user without extra privileges, with a memory cap (`LEAN_MEM_LIMIT`, default `3g`). One language server runs at a time (`LEAN_MAX_SESSIONS`, default 1; set 2 on an 8 GB server for two open cells). Idle servers stop after 10 minutes.
 - To leave Lean out on a small server: `docker compose up -d --build learnharness caddy`. The setting then shows that Lean is not available.
 
 ## Day to day

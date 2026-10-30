@@ -23,9 +23,12 @@ RUN curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-ini
 WORKDIR /home/node/project
 COPY --chown=node:node project/lakefile.toml ./
 # Resolve Mathlib (pinned in lakefile.toml), fetch its prebuilt .olean cache,
-# then load all of Mathlib once to prove the install is complete.
+# replay the build once so Lake records every trace/hash file the language
+# server would otherwise write on first use (and ProofWidgets' npm step,
+# which needs the network), then load all of Mathlib to prove the install.
 RUN lake update \
  && lake exe cache get \
+ && lake build Mathlib \
  && printf 'import Mathlib\n#eval Lean.versionString\n' > /tmp/Warm.lean \
  && lake env lean /tmp/Warm.lean \
  && rm /tmp/Warm.lean \
