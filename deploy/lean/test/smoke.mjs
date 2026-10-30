@@ -22,6 +22,16 @@ function fail(message) {
 function ok(message) {
 	console.log(`✓ ${message}`);
 }
+/** Fail with `what` unless the promise settles within `ms`. */
+function within(what, ms, promise) {
+	let timer;
+	return Promise.race([
+		promise,
+		new Promise((_, reject) => {
+			timer = setTimeout(() => reject(new Error(`timed out after ${ms / 1000} s: ${what}`)), ms);
+		}),
+	]).finally(() => clearTimeout(timer)).catch((err) => fail(err.message));
+}
 
 async function check() {
 	const health = await (await fetch(`${target}/health`)).json();
@@ -73,22 +83,22 @@ async function lsp() {
 
 	// Refused without the pairing cookie (Caddy's forward_auth).
 	if (process.env.LH_COOKIE) {
-		const code = await new Promise((resolve) => {
+		const code = await within("the unpaired connection attempt", 30_000, new Promise((resolve) => {
 			const bare = new WebSocket(target, { headers: { Origin: headers.Origin ?? "" } });
 			bare.on("unexpected-response", (_req, res) => resolve(res.statusCode));
 			bare.on("open", () => resolve("open"));
-			bare.on("error", () => {});
-		});
+			bare.on("error", (err) => resolve(`error ${err.message}`));
+		}));
 		if (code !== 401) fail(`an unpaired WebSocket got ${code}, expected 401`);
 		ok("unpaired connection refused (401)");
 	}
 
 	const ws = new WebSocket(target, { headers });
-	await new Promise((resolve, reject) => {
+	await within("the paired connection", 30_000, new Promise((resolve, reject) => {
 		ws.on("open", resolve);
 		ws.on("unexpected-response", (_req, res) => reject(new Error(`HTTP ${res.statusCode}`)));
 		ws.on("error", reject);
-	}).catch((err) => fail(`connect: ${err.message}`));
+	}).catch((err) => fail(`connect: ${err.message}`)));
 	ok("connected");
 
 	let nextId = 1;
@@ -107,6 +117,8 @@ async function lsp() {
 			diagnostics.set(msg.params.uri, msg.params);
 		} else if (msg.method === "$/lean/fileProgress") {
 			progressDone = msg.params.processing.length === 0;
+		} else if (msg.method === "window/logMessage" || msg.method === "window/showMessage") {
+			console.log(`  lean: ${msg.params.message}`);
 		}
 		for (const l of listeners) l();
 	});
@@ -114,12 +126,12 @@ async function lsp() {
 	ws.on("close", (code, reason) => {
 		if (!finished) fail(`closed early: ${code} ${reason}`);
 	});
-	const request = (method, params) =>
-		new Promise((resolve) => {
+	const request = (method, params, ms = 60_000) =>
+		within(`the answer to ${method}`, ms, new Promise((resolve) => {
 			const id = nextId++;
 			pending.set(id, resolve);
 			ws.send(JSON.stringify({ jsonrpc: "2.0", id, method, params }));
-		});
+		}));
 	const notify = (method, params) => ws.send(JSON.stringify({ jsonrpc: "2.0", method, params }));
 	const until = (what, predicate, ms) =>
 		new Promise((resolve) => {
@@ -135,7 +147,7 @@ async function lsp() {
 			listeners.add(l);
 		});
 
-	const init = await request("initialize", { processId: null, rootUri: null, capabilities: {} });
+	const init = await request("initialize", { processId: null, rootUri: null, capabilities: {} }, 120_000);
 	if (!init.result?.capabilities) fail(`initialize: ${JSON.stringify(init)}`);
 	notify("initialized", {});
 	ok(`initialized (${init.result.serverInfo?.name ?? "Lean"} ${init.result.serverInfo?.version ?? ""})`);

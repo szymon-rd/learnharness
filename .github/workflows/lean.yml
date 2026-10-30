@@ -47,8 +47,10 @@ jobs:
           done
           docker compose ps
       - name: Checks from the app container (pass, fail, sorry, no internet)
+        timeout-minutes: 10
         run: docker compose exec -T learnharness node --input-type=module - check http://lean:3300 < lean/test/smoke.mjs
       - name: Language server through Caddy (paired device)
+        timeout-minutes: 12
         run: |
           set -e
           CODE=$(docker compose exec -T learnharness cat /data/phone-access-code | tr -d '\r\n')
