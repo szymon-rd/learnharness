@@ -1,0 +1,8 @@
+{
+  "name": "learnharness-lean-bridge",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "ws": "8.21.3"
+  }
+}

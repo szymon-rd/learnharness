@@ -1,0 +1,8 @@
+# The Lean project that code cells run in: core Lean plus Mathlib, pinned to
+# one release. Keep lean-toolchain on the toolchain this Mathlib release uses.
+name = "cells"
+
+[[require]]
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4"
+rev = "v4.35.0"
