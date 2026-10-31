@@ -437,6 +437,7 @@ async function phone(browser, base) {
 		await page.getByTestId("lean-submission-card").first().getByText("does not pass").waitFor({ timeout: 90_000 });
 		await page.getByText("Lean still reports an error").first().waitFor({ timeout: 60_000 });
 		if (!(await editorText(dock)).includes("exact rfl")) throw new Error("the proof was reset after submitting");
+		if (await page.locator(".cm-tooltip-autocomplete").isVisible().catch(() => false)) throw new Error("the completion list stayed open after submitting");
 		await snap(page, "practice-submission-fails");
 	});
 

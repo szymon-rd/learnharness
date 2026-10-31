@@ -16,7 +16,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { HighlightStyle, indentUnit, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { linter, lintGutter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
-import { autocompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { autocompletion, closeCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { cn } from "@/lib/utils";
 import { cellDocument, cellLayout, expandAbbreviationBefore, LEAN_SYMBOL_BAR, type ResolvedLeanExercise } from "@/src/core";
 import { LeanSession, type LeanCompletion, type LeanConnection, type LeanDiagnostic } from "./lean-lsp";
@@ -431,9 +431,17 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 			}),
 		});
 		view.current = v;
+		// A tap anywhere outside the editor (e.g. Submit) closes the completion
+		// list: touch taps do not always move focus, so blur alone is not enough.
+		const outside = (e: PointerEvent) => {
+			const t = e.target as Node | null;
+			if (t && !v.dom.contains(t) && !(t as Element).closest?.(".cm-tooltip")) closeCompletion(v);
+		};
+		document.addEventListener("pointerdown", outside, true);
 		// Start with the cursor at the end of the proof.
 		v.dispatch({ selection: { anchor: v.state.doc.length } });
 		return () => {
+			document.removeEventListener("pointerdown", outside, true);
 			clearTimeout(changeTimer);
 			clearTimeout(goalTimer);
 			v.destroy();
