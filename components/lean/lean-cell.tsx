@@ -16,9 +16,10 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { HighlightStyle, indentUnit, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { linter, lintGutter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
+import { autocompletion, closeCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import { cn } from "@/lib/utils";
 import { cellDocument, cellLayout, expandAbbreviationBefore, LEAN_SYMBOL_BAR, type ResolvedLeanExercise } from "@/src/core";
-import { LeanSession, type LeanConnection, type LeanDiagnostic } from "./lean-lsp";
+import { LeanSession, type LeanCompletion, type LeanConnection, type LeanDiagnostic } from "./lean-lsp";
 
 export type LeanCellStatus = "connecting" | "checking" | "passes" | "sorry" | "errors" | "offline";
 
@@ -160,6 +161,29 @@ const cellTheme = EditorView.theme({
 	".cm-line": { padding: "0 10px" },
 	".cm-lean-locked": { backgroundColor: "color-mix(in oklab, var(--muted) 70%, transparent)", color: "var(--muted-foreground)" },
 	".cm-gutters": { backgroundColor: "transparent", border: "none" },
+	".cm-tooltip.cm-tooltip-autocomplete": {
+		backgroundColor: "var(--popover, var(--card))",
+		color: "var(--popover-foreground, var(--foreground))",
+		border: "1px solid var(--border)",
+		borderRadius: "8px",
+		overflow: "hidden",
+	},
+	".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "var(--font-mono, monospace)", fontSize: "12px", maxHeight: "40vh" },
+	".cm-tooltip.cm-tooltip-autocomplete > ul > li": { padding: "4px 8px" },
+	".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": { backgroundColor: "var(--accent)", color: "var(--accent-foreground, var(--foreground))" },
+	".cm-tooltip.cm-completionInfo": {
+		backgroundColor: "var(--popover, var(--card))",
+		color: "var(--popover-foreground, var(--foreground))",
+		border: "1px solid var(--border)",
+		borderRadius: "8px",
+		padding: "6px 8px",
+		maxWidth: "min(80vw, 28rem)",
+		whiteSpace: "pre-wrap",
+	},
+	".cm-lean-completion-type": { fontFamily: "var(--font-mono, monospace)", fontSize: "12px" },
+	".cm-lean-completion-doc": { marginTop: "4px", fontSize: "12px", color: "var(--muted-foreground)" },
+	".cm-completionDetail": { color: "var(--muted-foreground)", marginLeft: "8px", fontStyle: "normal" },
+	".cm-tooltip.cm-tooltip-hover, .cm-tooltip.cm-tooltip-lint": { backgroundColor: "var(--popover, var(--card))", color: "var(--popover-foreground, var(--foreground))", border: "1px solid var(--border)", borderRadius: "8px" },
 	".cm-tooltip-lint": { maxWidth: "min(90vw, 36rem)", whiteSpace: "pre-wrap", fontFamily: "var(--font-mono, monospace)", fontSize: "12px" },
 });
 
@@ -175,6 +199,110 @@ function toCmDiagnostics(doc: EditorState["doc"], diagnostics: LeanDiagnostic[])
 			const to = Math.max(from, pos(d.range.end));
 			return { from, to, severity: d.severity === 2 ? "warning" : "error", message: d.message } as Diagnostic;
 		});
+}
+
+/** LSP CompletionItemKind → CodeMirror's completion type (its icon). */
+function completionType(kind?: number): string | undefined {
+	switch (kind) {
+		case 2:
+		case 3:
+			return "function";
+		case 5:
+		case 10:
+			return "property";
+		case 6:
+			return "variable";
+		case 7:
+		case 22:
+		case 25:
+			return "class";
+		case 9:
+			return "namespace";
+		case 14:
+			return "keyword";
+		case 21:
+			return "constant";
+		default:
+			return undefined;
+	}
+}
+
+const IDENT_TAIL = /[\w'!?\u0370-\u03ff\u2080-\u209c\u1d62-\u1d6a]*$/;
+
+/** Lean's completions as a CodeMirror source. `flush` sends any pending
+ *  edit first, so Lean answers for the text on screen. */
+function leanCompletionSource(
+	lockedEnd: number,
+	session: { current: LeanSession | null },
+	flush: () => void,
+): (ctx: CompletionContext) => Promise<CompletionResult | null> {
+	return async (ctx) => {
+		if (ctx.pos < lockedEnd) return null;
+		const word = ctx.matchBefore(/[\w'!?.\u0370-\u03ff\u2080-\u209c\u1d62-\u1d6a]+/);
+		// Typing: after two identifier characters, or right after a dot.
+		if (!ctx.explicit) {
+			if (!word) return null;
+			const text = word.text;
+			if (!text.endsWith(".") && text.replace(/^.*\./, "").length < 2) return null;
+		}
+		const s = session.current;
+		if (!s) return null;
+		flush();
+		const line = ctx.state.doc.lineAt(ctx.pos);
+		let items: LeanCompletion[];
+		try {
+			items = await s.completions(line.number - 1, ctx.pos - line.from);
+		} catch {
+			return null;
+		}
+		if (ctx.aborted || items.length === 0) return null;
+		// Complete the last dotted segment (`Nat.add_c` → replace `add_c`).
+		const text = word?.text ?? "";
+		const from = word ? word.from + text.lastIndexOf(".") + 1 : ctx.pos;
+		const options: Completion[] = items
+			.slice()
+			.sort((a, b) => (a.sortText ?? a.label).localeCompare(b.sortText ?? b.label))
+			.slice(0, 300)
+			.map((item) => ({
+				label: item.label,
+				...(item.detail ? { detail: item.detail.length > 60 ? `${item.detail.slice(0, 60)}…` : item.detail } : {}),
+				...(completionType(item.kind) ? { type: completionType(item.kind) } : {}),
+				apply: applyFor(item.textEdit?.newText ?? item.label, word?.from ?? null),
+				// The type (and docstring) of the highlighted name, fetched on
+				// demand: Lean's list carries names only.
+				info: async () => {
+					const full = item.detail ? item : await s.resolveCompletion(item).catch(() => null);
+					const detail = full?.detail;
+					const doc = typeof full?.documentation === "string" ? full.documentation : full?.documentation?.value;
+					if (!detail && !doc) return null;
+					const el = document.createElement("div");
+					el.className = "cm-lean-completion-info";
+					if (detail) {
+						const t = document.createElement("div");
+						t.className = "cm-lean-completion-type";
+						t.textContent = `${item.label} : ${detail}`;
+						el.append(t);
+					}
+					if (doc) {
+						const d = document.createElement("div");
+						d.className = "cm-lean-completion-doc";
+						d.textContent = doc.length > 400 ? `${doc.slice(0, 400)}…` : doc;
+						el.append(d);
+					}
+					return el;
+				},
+			}));
+		return { from, options, validFor: IDENT_TAIL };
+	};
+}
+
+/** Insert a completion. A full dotted name (`Nat.add_comm`) replaces the
+ *  whole typed name; a short one replaces only its last segment. */
+function applyFor(text: string, wordFrom: number | null): Completion["apply"] {
+	return (view, _completion, from, to) => {
+		const start = text.includes(".") && wordFrom !== null ? wordFrom : from;
+		view.dispatch({ changes: { from: start, to, insert: text }, selection: { anchor: start + text.length }, userEvent: "input.complete" });
+	};
 }
 
 function statusOf(connection: LeanConnection, processing: boolean, diagnostics: LeanDiagnostic[]): LeanCellStatus {
@@ -204,7 +332,17 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 	const [processing, setProcessing] = useState(true);
 	const [diagnostics, setDiags] = useState<LeanDiagnostic[]>([]);
 	const [goals, setGoals] = useState<string[] | null>(null);
+	const [goalsBeforeLine, setGoalsBeforeLine] = useState(false);
+	// The newest status, for the goal fallback (read inside async callbacks).
+	const statusRef = useRef<LeanCellStatus>("connecting");
 	const [attempt, setAttempt] = useState(0);
+	// The proof as last edited: survives an editor rebuild (the parent
+	// re-rendering with an equal-but-new exercise object must not reset it).
+	const latestProof = useRef(initialProof);
+	const exerciseRef = useRef(exercise);
+	exerciseRef.current = exercise;
+	// The editor is rebuilt only when the exercise's TEXT changes.
+	const exerciseKey = `${exercise.prelude}\u0000${exercise.statement}`;
 	const onProofChangeRef = useRef(onProofChange);
 	onProofChangeRef.current = onProofChange;
 
@@ -213,16 +351,43 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 	const lockedEnd = prefix.length;
 	const proofOf = useCallback((doc: string) => (doc.startsWith(prefix) ? doc.slice(prefix.length).replace(/\n$/, "") : ""), [prefix]);
 
+	// The newest text not yet sent to Lean (edits are debounced).
+	const pendingText = useRef<string | null>(null);
+	const flushChange = useCallback(() => {
+		if (pendingText.current === null) return;
+		session.current?.change(pendingText.current);
+		pendingText.current = null;
+	}, []);
+
 	const refreshGoals = useCallback(() => {
 		const v = view.current;
 		const s = session.current;
 		if (!v || !s) return;
+		flushChange();
 		const head = v.state.selection.main.head;
 		const line = v.state.doc.lineAt(head);
-		s.goals(line.number - 1, head - line.from)
-			.then((g) => setGoals(g))
-			.catch(() => setGoals(null));
-	}, []);
+		const indent = line.text.search(/\S/);
+		void (async () => {
+			try {
+				const at = await s.goals(line.number - 1, head - line.from);
+				// After a line's last tactic (often `sorry`, which closes the
+				// goal) Lean reports no goals. While the proof is unfinished
+				// that reads like "done": show the goal that line works on.
+				if (at && at.length === 0 && statusRef.current !== "passes" && indent >= 0 && head - line.from > indent && head > lockedEnd) {
+					const before = await s.goals(line.number - 1, indent);
+					if (before && before.length > 0) {
+						setGoals(before);
+						setGoalsBeforeLine(true);
+						return;
+					}
+				}
+				setGoals(at);
+				setGoalsBeforeLine(false);
+			} catch {
+				setGoals(null);
+			}
+		})();
+	}, [flushChange, lockedEnd]);
 
 	// The editor (once per cell).
 	useEffect(() => {
@@ -233,7 +398,7 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 			parent: host.current,
 			state: EditorState.create({
 				// No trailing blank line: the proof is the editor's last line.
-				doc: cellDocument(exercise, initialProof).replace(/\n$/, ""),
+				doc: cellDocument(exerciseRef.current, latestProof.current).replace(/\n$/, ""),
 				extensions: [
 					history(),
 					indentUnit.of("  "),
@@ -242,6 +407,7 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 					syntaxHighlighting(leanHighlight),
 					lockedPrefix(lockedEnd),
 					abbreviations,
+					autocompletion({ override: [leanCompletionSource(lockedEnd, session, flushChange)], activateOnTypingDelay: 150, maxRenderedOptions: 60, icons: true }),
 					linter(null),
 					lintGutter(),
 					cellTheme,
@@ -250,9 +416,11 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 					EditorView.updateListener.of((u) => {
 						if (u.docChanged) {
 							const text = u.state.doc.toString();
-							onProofChangeRef.current(proofOf(text));
+							latestProof.current = proofOf(text);
+							onProofChangeRef.current(latestProof.current);
+							pendingText.current = text;
 							clearTimeout(changeTimer);
-							changeTimer = setTimeout(() => session.current?.change(text), 250);
+							changeTimer = setTimeout(flushChange, 250);
 						}
 						if (u.docChanged || u.selectionSet) {
 							clearTimeout(goalTimer);
@@ -263,16 +431,24 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 			}),
 		});
 		view.current = v;
+		// A tap anywhere outside the editor (e.g. Submit) closes the completion
+		// list: touch taps do not always move focus, so blur alone is not enough.
+		const outside = (e: PointerEvent) => {
+			const t = e.target as Node | null;
+			if (t && !v.dom.contains(t) && !(t as Element).closest?.(".cm-tooltip")) closeCompletion(v);
+		};
+		document.addEventListener("pointerdown", outside, true);
 		// Start with the cursor at the end of the proof.
 		v.dispatch({ selection: { anchor: v.state.doc.length } });
 		return () => {
+			document.removeEventListener("pointerdown", outside, true);
 			clearTimeout(changeTimer);
 			clearTimeout(goalTimer);
 			v.destroy();
 			view.current = null;
 		};
 		// The cell is fixed for its lifetime; the initial proof is read once.
-	}, [exercise, lockedEnd]);
+	}, [exerciseKey, lockedEnd]);
 
 	// The Lean session (reconnects on retry).
 	useEffect(() => {
@@ -285,7 +461,8 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 			},
 			onProcessing: (p) => {
 				setProcessing(p);
-				if (!p) refreshGoals();
+				// After the re-render, so the goal fallback sees the new status.
+				if (!p) setTimeout(refreshGoals, 120);
 			},
 			onDiagnostics: (_version, diags) => {
 				setDiags(diags);
@@ -306,6 +483,11 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 	}, [cellId, attempt, refreshGoals]);
 
 	const status = statusOf(connection, processing, diagnostics);
+	statusRef.current = status;
+	const shown = diagnostics
+		.filter((d) => (d.severity ?? 1) <= 2)
+		.sort((a, b) => (a.severity ?? 1) - (b.severity ?? 1) || a.range.start.line - b.range.start.line)
+		.slice(0, 4);
 	useEffect(() => onStatus?.(status), [status, onStatus]);
 
 	const insert = (text: string) => {
@@ -359,10 +541,31 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 				</div>
 			) : (
 				<div className="rounded-lg bg-muted/40 px-3 py-2" data-testid="lean-goals">
-					<div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Goal at cursor</div>
+					<div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{goalsBeforeLine ? "Goal on this line" : "Goal at cursor"}</div>
 					<pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed">
 						{goals === null ? (connection === "ready" ? "—" : "…") : goals.length === 0 ? "No goals" : goals.join("\n\n")}
 					</pre>
+				</div>
+			)}
+			{/* Lean's messages, readable without hover (phones have none):
+			    errors first, then warnings, with the line in the cell. */}
+			{connection !== "closed" && shown.length > 0 && (
+				<div className="rounded-lg border border-border/60 px-3 py-2" data-testid="lean-messages">
+					<div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Lean says</div>
+					<ul className="flex flex-col gap-1.5">
+						{shown.map((d, i) => (
+							<li
+								key={i}
+								className={cn(
+									"whitespace-pre-wrap break-words rounded-md px-2 py-1 font-mono text-xs leading-relaxed",
+									(d.severity ?? 1) === 1 ? "bg-red-500/10" : "bg-amber-500/10",
+								)}
+							>
+								<span className="text-muted-foreground">line {d.range.start.line + 1}: </span>
+								{d.message.length > 600 ? `${d.message.slice(0, 600)}…` : d.message}
+							</li>
+						))}
+					</ul>
 				</div>
 			)}
 		</div>

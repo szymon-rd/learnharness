@@ -398,6 +398,7 @@ function teacher(context, call) {
 	const tools = toolNames(context);
 	const handoffAt = msgs.findLastIndex((m) => m.role === "user" && textOf(m).startsWith(HANDOFF));
 	const teach = msgs.slice(handoffAt + 1);
+	if (tools.has("lean_exercise") && aboutLean(msgs)) return leanTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
 	const calls = toolCallsOf(teach);
 	const done = (name) => calls.some((c) => c.name === name && resultFor(teach, c.id) && !resultFor(teach, c.id).isError);
 	const questions = calls.filter((c) => ["quiz", "explain", "ask_user_question"].includes(c.name));
@@ -471,6 +472,7 @@ const PROBLEMS = [
 
 function practice(context, call) {
 	const msgs = conversation(context);
+	if (toolDeclaration(context, "problem").includes('"lean"') && aboutLean(msgs)) return leanPractice(context, call, msgs);
 	const calls = toolCallsOf(msgs);
 	const posed = calls.filter((c) => c.name === "problem" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
 	const concluded = calls.filter((c) => c.name === "conclude" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
@@ -608,6 +610,131 @@ function pdfReader() {
 
 function summarizer() {
 	return reply([fauxText("## Session so far\nThe learner was probed on conditioning and base rates, then taught Bayes' rule from the product rule. Quizzes: predict (answered), check (answered).")]);
+}
+
+// ─── Lean code cells (tests/e2e/lean-qa.e2e.mjs) ───────────────────────────
+//
+// Only when code cells are on (the tools carry lean_exercise / the problem
+// tool's lean block) AND the learner's topic mentions Lean — the Bayes flow
+// above never sees any of this.
+
+/** The JSON of one declared tool, if any (system messages' toolsAdded). */
+function toolDeclaration(context, name) {
+	let found = null;
+	for (const m of context.messages) {
+		if (m.role !== "system") continue;
+		for (const t of m.toolsAdded ?? []) if (t.name === name) found = t;
+	}
+	return found ? JSON.stringify(found) : "";
+}
+
+function aboutLean(msgs) {
+	return msgs.some((m) => m.role === "user" && /\bLean\b/.test(textOf(m)) && !textOf(m).startsWith("[Session context]"));
+}
+
+const LEAN_PLAN = ["graph TD", "  nat-arith[Arithmetic on ℕ] --> tactics[Tactic proofs]", "  tactics --> mathlib[Mathlib automation]"].join("\n");
+
+const LEAN_EX1 = {
+	nodeId: "nat-arith",
+	question: "Prove that addition on natural numbers is **commutative**. Hint: `omega` decides linear arithmetic over ℕ — or look for a library lemma such as `Nat.add_comm`.",
+	statement: "theorem qa_add_comm (a b : ℕ) : a + b = b + a := by",
+	referenceProof: "  omega",
+};
+
+const LEAN_EX2 = {
+	nodeId: "mathlib",
+	question: "Using Mathlib, show that the square of a real number is never negative.",
+	statement: "theorem qa_sq_nonneg (x : ℝ) : 0 ≤ x ^ 2 := by",
+	referenceProof: "  positivity",
+};
+
+const LEAN_QUIZ = {
+	type: "check",
+	nodeId: "tactics",
+	question: "Which tactic is a decision procedure for linear arithmetic over ℕ and ℤ?",
+	options: [
+		{ label: "`omega`", value: "omega" },
+		{ label: "`rfl`", value: "rfl" },
+		{ label: "`exact?`", value: "exact" },
+	],
+	explanation: "`omega` decides linear (in)equalities over ℕ and ℤ; `rfl` only closes goals true by definition.",
+	correctAnswer: "omega",
+};
+
+function leanVerdict(msgs, c) {
+	const a = parseJson(textOf(resultFor(msgs, c.id) ?? {})) ?? {};
+	if (a.dismissed) return "Skipped — fine.";
+	if (a.correct === true) return "Lean accepts your proof — well done.";
+	return `Lean did not accept that proof (${a.verdict ?? "it reports errors"}). Look at the errors in the card; we'll come back to it.`;
+}
+
+function leanTeacher(context, call, msgs, teach, ack) {
+	const calls = toolCallsOf(teach);
+	const ok = (c) => resultFor(teach, c.id) && !resultFor(teach, c.id).isError;
+	if (!calls.some((c) => c.name === "plan_init" && ok(c))) {
+		return reply([
+			fauxText(`${ack}Here's the route: arithmetic on ℕ, then tactic proofs, then Mathlib's automation. You'll write the proofs yourself in Lean cells.`),
+			call("plan_init", { mermaid: LEAN_PLAN, codeCells: true }),
+		]);
+	}
+	const lean = calls.filter((c) => c.name === "lean_exercise");
+	const quiz = calls.filter((c) => c.name === "quiz");
+	if (lean.length === 0) {
+		return reply([fauxText(`${ack}## Proofs are programs\n\nIn Lean a theorem is a type and a proof is a term of that type. A tactic block (\`by …\`) builds the term step by step; the **goal** shows what is left to prove.\n\nYour turn:`), call("lean_exercise", LEAN_EX1)]);
+	}
+	if (lean.length === 1 && ok(lean[0])) {
+		// Deliberately a second code cell in a row: the tool must refuse it.
+		return reply([fauxText(`${ack}${leanVerdict(teach, lean[0])}\n\nAnother one:`), call("lean_exercise", LEAN_EX2)]);
+	}
+	if (lean.length === 2 && resultFor(teach, lean[1].id)?.isError && quiz.length === 0) {
+		return reply([fauxText("Let's mix in a quick check before the next proof."), call("quiz", LEAN_QUIZ)]);
+	}
+	if (quiz.length === 1 && ok(quiz[0]) && lean.length === 2) {
+		return reply([fauxText(`${ack}${verdictLine(teach, quiz[0])}\n\nNow with Mathlib:`), call("lean_exercise", LEAN_EX2)]);
+	}
+	if (lean.length === 3 && ok(lean[2])) {
+		return reply([fauxText(`${ack}${leanVerdict(teach, lean[2])}\n\n## Summary\n\n- A proof is a term; tactics build it.\n- \`omega\` decides linear arithmetic over ℕ and ℤ.\n- Mathlib's \`positivity\` proves goals of the form \`0 ≤ e\` and \`0 < e\`.`)]);
+	}
+	return reply([fauxText(ack.trim() || "Noted.")]);
+}
+
+const LEAN_PROBLEM = {
+	statement: "Prove in Lean that every natural number is smaller than its successor.",
+	mode: "recall",
+	modelSolution: "`omega` closes it: the goal `n < n + 1` is linear arithmetic over ℕ.",
+	lean: { statement: "theorem qa_lt_succ (n : ℕ) : n < n + 1 := by", referenceProof: "  omega" },
+};
+
+function leanPractice(context, call, msgs) {
+	const ids = [...msgs.map((m) => textOf(m)).join("\n").matchAll(/\[(n_[a-z0-9]+)\]/g)].map((m) => m[1]);
+	const calls = toolCallsOf(msgs);
+	const problems = calls.filter((c) => c.name === "problem");
+	const posed = problems.filter((c) => resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
+	const concluded = calls.filter((c) => c.name === "conclude" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
+	const active = posed.length > concluded.length;
+	const last = msgs.at(-1);
+	const tailText = trailing(msgs).map((m) => textOf(m)).join("\n");
+	const target = ids.length ? { target: [ids[0]] } : {};
+	if (last?.role === "toolResult" && last.toolName === "conclude") {
+		return reply([fauxText("That's the committed solution above. Press **Next problem** when you're ready.")]);
+	}
+	if (last?.role === "toolResult" && last.toolName === "problem" && last.isError) {
+		// The two-in-a-row guard refused a second Lean problem: pose a plain one.
+		return reply([fauxText("A non-Lean one in between, then."), call("problem", { ...PROBLEMS[0], ...target })]);
+	}
+	if (active && tailText.includes(THINKING)) {
+		if (/Lean verdict: passes/.test(tailText)) {
+			return reply([call("conclude", { outcome: "solved", verdict: "Lean accepts the proof.", rung: null, missClass: null, retest: false })]);
+		}
+		if (/Lean verdict: does not pass/.test(tailText)) {
+			return reply([fauxText("Lean still reports an error — read it in your submission card. Hint: this goal is linear arithmetic over ℕ.")]);
+		}
+		return reply([call("conclude", { outcome: "movedOn", verdict: "Read your trace.", rung: null, missClass: null, retest: false })]);
+	}
+	if (!active && (posed.length === 0 || tailText.includes(NEXT_PROBLEM))) {
+		return reply([fauxText(posed.length === 0 ? "A Lean one to start." : "Another Lean one."), call("problem", { ...LEAN_PROBLEM, ...target })]);
+	}
+	return reply([fauxText(active ? "Edit the proof and submit when Lean accepts it." : "Press **Next problem** to continue.")]);
 }
 
 function unknownRole(context) {

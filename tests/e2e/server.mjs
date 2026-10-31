@@ -15,6 +15,7 @@
  * --code turns on phone access (pairing), as on a VPS.
  */
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createScriptedProviders } from "./scripted-model.mjs";
@@ -47,6 +48,26 @@ const next = (await import("next")).default;
 const app = next({ dev: false, dir: ROOT, hostname: "0.0.0.0", port });
 await app.prepare();
 const handle = app.getRequestHandler();
-http.createServer((req, res) => handle(req, res)).listen(port, "0.0.0.0", () => {
+const server = http.createServer((req, res) => handle(req, res));
+// Lean code cells (tests/e2e/lean-qa.e2e.mjs): LH_LEAN_URL points the app at
+// a Lean service; the browser's /lean/lsp WebSocket is passed through to it
+// here, the way Caddy does it on a server.
+server.on("upgrade", (req, socket, head) => {
+	const lean = process.env.LH_LEAN_URL;
+	if (!lean || !req.url?.startsWith("/lean/lsp")) {
+		socket.destroy();
+		return;
+	}
+	const { hostname, port: leanPort } = new URL(lean);
+	const upstream = net.connect(Number(leanPort), hostname, () => {
+		const headers = Object.entries(req.headers).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`);
+		upstream.write(`${req.method} ${req.url} HTTP/1.1\r\n${headers.join("\r\n")}\r\n\r\n`);
+		upstream.write(head);
+		upstream.pipe(socket).pipe(upstream);
+	});
+	upstream.on("error", () => socket.destroy());
+	socket.on("error", () => upstream.destroy());
+});
+server.listen(port, "0.0.0.0", () => {
 	console.log(`E2E server ready on http://127.0.0.1:${port} (scripted model)`);
 });
