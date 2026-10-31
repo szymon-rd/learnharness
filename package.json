@@ -25,6 +25,7 @@
 		"desktop:dist": "rm -rf dist .next/standalone && next build && node scripts/smoke-provider-runtime.mjs && node scripts/build-server.mjs && node scripts/smoke-server.mjs && DEVELOPER_DIR=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer} APPLE_KEYCHAIN_PROFILE=LH_NOTARY APPLE_TEAM_ID=JS6XN22HY6 electron-builder --mac --arm64"
 	},
 	"dependencies": {
+		"@codemirror/autocomplete": "6.20.4",
 		"@codemirror/commands": "6.11.1",
 		"@codemirror/language": "6.13.1",
 		"@codemirror/lint": "6.9.7",

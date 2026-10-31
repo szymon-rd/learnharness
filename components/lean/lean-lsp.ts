@@ -14,6 +14,16 @@ export interface LeanDiagnostic {
 
 export type LeanConnection = "connecting" | "ready" | "closed";
 
+/** One LSP completion item (the fields the cell uses). */
+export interface LeanCompletion {
+	label: string;
+	/** LSP CompletionItemKind (3 function, 5 field, 6 variable, 7 class, 14 keyword, 21 constant…). */
+	kind?: number;
+	detail?: string;
+	sortText?: string;
+	textEdit?: { newText: string; range?: unknown; insert?: unknown; replace?: unknown };
+}
+
 export interface LeanSessionEvents {
 	onConnection?: (state: LeanConnection, reason?: string) => void;
 	onDiagnostics?: (version: number | null, diagnostics: LeanDiagnostic[]) => void;
@@ -62,7 +72,11 @@ export class LeanSession {
 			this.opened = false;
 			if (!this.closedByUs) this.events.onConnection?.("closed", e.reason || "Lean disconnected.");
 		};
-		await this.request("initialize", { processId: null, rootUri: null, capabilities: { textDocument: { publishDiagnostics: {} } } });
+		await this.request("initialize", {
+			processId: null,
+			rootUri: null,
+			capabilities: { textDocument: { publishDiagnostics: {}, completion: { completionItem: { snippetSupport: false } } } },
+		});
 		this.notify("initialized", {});
 		this.version = 1;
 		this.notify("textDocument/didOpen", { textDocument: { uri: this.uri, languageId: "lean4", version: this.version, text } });
@@ -85,6 +99,16 @@ export class LeanSession {
 		if (!this.opened) return null;
 		const res = (await this.request("$/lean/plainGoal", { textDocument: { uri: this.uri }, position: { line, character } })) as { goals?: string[] } | null;
 		return res?.goals ?? null;
+	}
+
+	/** Lean's completions at a position (identifiers, dotted names, tactics). */
+	async completions(line: number, character: number): Promise<LeanCompletion[]> {
+		if (!this.opened) return [];
+		const res = (await this.request("textDocument/completion", { textDocument: { uri: this.uri }, position: { line, character } })) as
+			| { items?: LeanCompletion[] }
+			| LeanCompletion[]
+			| null;
+		return Array.isArray(res) ? res : (res?.items ?? []);
 	}
 
 	close(): void {

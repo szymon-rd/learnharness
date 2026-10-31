@@ -90,7 +90,7 @@ function advance(
 		// explain, whichever mechanic the settings armed (both carry nodeId).
 		if (
 			phase === "plan" &&
-			(part.type === "tool-quiz" || part.type === "tool-explain") &&
+			(part.type === "tool-quiz" || part.type === "tool-explain" || part.type === "tool-lean_exercise") &&
 			taggedNodeId(part.input)
 		) {
 			phase = "teach";
@@ -125,7 +125,7 @@ export function teachStepIndex(
 			continue;
 		}
 		if (
-			(part.type === "tool-quiz" || part.type === "tool-explain") &&
+			(part.type === "tool-quiz" || part.type === "tool-explain" || part.type === "tool-lean_exercise") &&
 			taggedNodeId(part.input)
 		) {
 			// The call's governing step: 0–1 step-starts seen = the message's

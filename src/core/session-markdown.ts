@@ -109,6 +109,22 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		return { heading, body };
 	}
 
+	if (result.toolName === "lean_exercise") {
+		// A Lean code cell (owner, 2026-10-30): the task, the learner's proof
+		// and the server's verdict.
+		const lean = (result.details as { lean?: { proof?: string; summary?: string; verdict?: { passed?: boolean } } } | undefined)?.lean;
+		const question = typeof out?.questionText === "string" && out.questionText ? out.questionText : "(no question text)";
+		const body = [`**Q:** ${question}`];
+		if (out?.dismissed === true) body.push("The learner skipped this exercise.");
+		else if (lean) {
+			body.push(`${lean.verdict?.passed ? "Lean accepted the learner's proof." : "Lean did not accept the learner's proof."}${lean.summary ? ` ${lean.summary}` : ""}`);
+			if (typeof lean.proof === "string" && lean.proof.trim()) body.push("```lean\n" + lean.proof.replace(/\s+$/, "") + "\n```");
+		}
+		const thinking = (result.details as { thinking?: string } | undefined)?.thinking;
+		if (typeof thinking === "string" && thinking) body.push(`*(his thinking: ${thinking})*`);
+		return { heading: "Lean exercise", body };
+	}
+
 	if (ctx !== undefined && result.toolName === PRACTICE_PROBLEM_TOOL) {
 		const statement = ctx.calls.get(result.toolCallId)?.args?.statement;
 		return {

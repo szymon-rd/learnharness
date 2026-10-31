@@ -2011,7 +2011,8 @@ const TranscriptRow = memo(function TranscriptRow({
 									case "tool-probe":
 									case "tool-ask_user_question":
 									case "tool-explain":
-									case "tool-recall": {
+									case "tool-recall":
+									case "tool-lean_exercise": {
 										// Pending/streaming questions live in the dock, not the
 										// transcript; answered ones render as graded records.
 										if (part.state === "output-available") {
