@@ -81,6 +81,9 @@ jobs:
     name: Code cells QA (phone UI, real Lean)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # contents: write only to publish the screenshots to their own branch.
+    permissions:
+      contents: write
     env:
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
@@ -112,3 +115,16 @@ jobs:
       - name: Lean log
         if: always()
         run: docker logs --tail 60 qa-lean
+      # The screenshots also go to the qa/lean-screenshots branch (one
+      # commit, replaced on every run), so they can be viewed without
+      # downloading the artifact.
+      - name: Publish the screenshots to qa/lean-screenshots
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd test-results/lean-qa
+          git init -q -b qa/lean-screenshots
+          git add ./*.png results.json
+          git -c user.name="Lean QA" -c user.email="lean-qa@users.noreply.github.com" commit -qm "Lean QA screenshots for $GITHUB_SHA"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" qa/lean-screenshots

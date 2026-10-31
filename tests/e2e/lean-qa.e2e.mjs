@@ -267,7 +267,10 @@ async function phone(browser, base) {
 		await last.tap();
 		await page.keyboard.press("End");
 		await page.keyboard.press("Home"); // before `sorry`: the goal it would close
-		await dock.getByTestId("lean-goals").getByText("⊢ a + b = b + a").waitFor({ timeout: 30_000 });
+		const panel = dock.getByTestId("lean-goals");
+		await panel.getByText("⊢ a + b = b + a").waitFor({ timeout: 30_000 }).catch(async () => {
+			throw new Error(`goal panel shows: ${JSON.stringify(await panel.innerText())}`);
+		});
 		await sleep(500);
 		await snap(page, "cell-sorry-goal");
 	});
