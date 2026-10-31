@@ -22,6 +22,9 @@ export interface LeanCompletion {
 	detail?: string;
 	sortText?: string;
 	textEdit?: { newText: string; range?: unknown; insert?: unknown; replace?: unknown };
+	documentation?: string | { value?: string };
+	/** Lean's own payload, sent back on resolve. */
+	data?: unknown;
 }
 
 export interface LeanSessionEvents {
@@ -109,6 +112,12 @@ export class LeanSession {
 			| LeanCompletion[]
 			| null;
 		return Array.isArray(res) ? res : (res?.items ?? []);
+	}
+
+	/** The details Lean leaves out of the list (the type of a name). */
+	async resolveCompletion(item: LeanCompletion): Promise<LeanCompletion | null> {
+		if (!this.opened) return null;
+		return (await this.request("completionItem/resolve", item)) as LeanCompletion | null;
 	}
 
 	close(): void {

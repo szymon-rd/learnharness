@@ -737,12 +737,14 @@ export class SessionModel {
 				// flow parses them. Retry's 400s are ordinary user-facing
 				// guidance, so show their error text without JSON syntax.
 				let message = (await res.text()) || `The send failed (${res.status}).`;
-				if (input.type === "retry" && res.status === 400) {
-					try {
-						const refusal = JSON.parse(message) as { error?: unknown } | null;
-						if (typeof refusal?.error === "string" && refusal.error.length > 0) message = refusal.error;
-					} catch { /* Non-envelope failures keep their original text. */ }
-				}
+				try {
+					const refusal = JSON.parse(message) as Record<string, unknown> | null;
+					// A plain {error} body (e.g. Lean could not check a proof) shows
+					// as its sentence; envelopes with more fields (a `code`) stay
+					// verbatim for the refusal flow.
+					const plain = refusal !== null && typeof refusal === "object" && Object.keys(refusal).length === 1;
+					if ((plain || (input.type === "retry" && res.status === 400)) && typeof refusal?.error === "string" && refusal.error.length > 0) message = refusal.error;
+				} catch { /* Non-envelope failures keep their original text. */ }
 				throw new Error(message);
 			}
 			accepted = true;

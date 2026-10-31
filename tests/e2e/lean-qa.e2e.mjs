@@ -312,6 +312,8 @@ async function phone(browser, base) {
 		await popup.waitFor({ state: "visible", timeout: 60_000 });
 		const option = popup.locator("li").filter({ hasText: /^(Nat\.)?add_comm(\b|$)/ }).first();
 		await option.waitFor({ timeout: 30_000 });
+		// The highlighted name's type, fetched from Lean on demand.
+		await page.locator(".cm-completionInfo").getByText(/add_comm.*:/).waitFor({ timeout: 20_000 });
 		await sleep(300);
 		await snap(page, "cell-autocomplete");
 		await option.tap();
@@ -320,6 +322,7 @@ async function phone(browser, base) {
 		const text = await editorText(dock);
 		if (!text.includes("exact Nat.add_comm a b")) throw new Error(`completion did not insert the name: ${text.split("\n").pop()}`);
 		await waitStatus(dock, "passes", 60_000);
+		await dock.getByTestId("lean-goals").getByText("No goals").waitFor({ timeout: 30_000 });
 		await sleep(400);
 		await snap(page, "cell-passes-after-completion");
 	});
@@ -375,6 +378,8 @@ async function phone(browser, base) {
 		await dock.getByRole("button", { name: "Submit proof" }).tap();
 		await sleep(4000);
 		await snap(page, "submit-while-offline");
+		const body = await page.locator("body").innerText();
+		if (body.includes('{"error"')) throw new Error("the error banner shows raw JSON");
 		if (!(await page.getByTestId("lean-dock").isVisible())) throw new Error("the exercise left the dock although Lean could not check it");
 		docker("start", LEAN_CONTAINER);
 		await waitLeanHealthy();
@@ -431,6 +436,7 @@ async function phone(browser, base) {
 		await dock.getByTestId("practice-send").tap();
 		await page.getByTestId("lean-submission-card").first().getByText("does not pass").waitFor({ timeout: 90_000 });
 		await page.getByText("Lean still reports an error").first().waitFor({ timeout: 60_000 });
+		if (!(await editorText(dock)).includes("exact rfl")) throw new Error("the proof was reset after submitting");
 		await snap(page, "practice-submission-fails");
 	});
 
