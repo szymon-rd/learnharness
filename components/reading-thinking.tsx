@@ -24,7 +24,15 @@ export function ReadingThinkingField({
 	onEscape,
 	onOpen,
 	claim,
+	hidden = false,
+	onHide,
 }: {
+	/** Phones (owner, 2026-11-01): the field stays mounted — it still owns
+	 *  dictated speech — but renders nothing until the slim row's chip
+	 *  opens it. */
+	hidden?: boolean;
+	/** Phones: the "Hide" link folding the field back into the chip. */
+	onHide?: () => void;
 	value: string;
 	onChange: (v: string) => void;
 	/** Esc in the field stops dictation (threaded from the page's hook). */
@@ -46,16 +54,23 @@ export function ReadingThinkingField({
 		),
 		claim,
 	);
+	if (hidden) return null;
 	return (
 		<div
 			data-testid="reading-thinking-field"
 			className="pointer-events-auto mb-2 rounded-2xl border bg-card/60 px-3 py-2 transition-colors focus-within:border-primary/50"
 		>
-			<div className="pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-				Thinking while reading
+			<div className="flex items-center justify-between pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+				<span>Thinking while reading</span>
+				{onHide && (
+					<button type="button" data-testid="reading-thinking-hide" className="normal-case tracking-normal" onClick={onHide}>
+						Hide
+					</button>
+				)}
 			</div>
 			<textarea
 				value={value}
+				autoFocus={onHide !== undefined}
 				onChange={(e) => onChange(e.target.value)}
 				/* py-0.5 (owner round, 2026-10-07): the scrollbar fix. Source
 				   Sans 3's font box is 22px at 16px; lh-input's 1.25 leading

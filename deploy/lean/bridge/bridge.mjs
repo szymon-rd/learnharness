@@ -12,7 +12,13 @@
  *   POST /check     {source} → Lean's messages for that file, from
  *                  `lake env lean --json`. Internal: only the app calls it
  *                  (Caddy does not route it). Grading happens in the app.
- *   GET  /health    toolchain, Mathlib version, open sessions.
+ *   GET  /health    toolchain, Mathlib version, open sessions, and whether
+ *                  the start-up warm-up is still loading Mathlib.
+ *
+ * Warm-up: on start the service checks a file that only imports Mathlib, so
+ * Mathlib's files are in memory before the first real check (a cold load
+ * takes about a minute on a small server). Checks that arrive meanwhile
+ * queue behind it; /health reports `warming: true` until it finishes.
  *
  * The container has no internet access and runs as a normal user; Lean code
  * can still run IO (#eval), so treat the container as disposable.
@@ -32,6 +38,8 @@ const PROJECT = path.resolve(process.env.LEAN_PROJECT ?? "/home/node/project");
 const MAX_SESSIONS = Math.max(1, Number(process.env.LEAN_MAX_SESSIONS ?? 1));
 const IDLE_MS = Number(process.env.LEAN_IDLE_MINUTES ?? 10) * 60_000;
 const CHECK_TIMEOUT_MS = Number(process.env.LEAN_CHECK_TIMEOUT_SECONDS ?? 120) * 1000;
+/** The warm-up loads all of Mathlib from disk, so it gets more time. */
+const WARMUP_TIMEOUT_MS = Number(process.env.LEAN_WARMUP_TIMEOUT_SECONDS ?? 600) * 1000;
 const MAX_QUEUED_CHECKS = 4;
 const MAX_SOURCE_BYTES = 200_000;
 const PUBLIC_ORIGIN = process.env.LH_PUBLIC_URL ? new URL(process.env.LH_PUBLIC_URL).origin : null;
@@ -218,7 +226,7 @@ function startSession(ws) {
 let checkQueue = Promise.resolve();
 let queuedChecks = 0;
 
-function runCheck(source) {
+function runCheck(source, timeoutMs = CHECK_TIMEOUT_MS) {
 	return new Promise((resolve) => {
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "check-"));
 		const file = path.join(dir, "Check.lean");
@@ -233,7 +241,7 @@ function runCheck(source) {
 		const timer = setTimeout(() => {
 			timedOut = true;
 			killGroup(lean);
-		}, CHECK_TIMEOUT_MS);
+		}, timeoutMs);
 		lean.on("close", (code) => {
 			clearTimeout(timer);
 			fs.rmSync(dir, { recursive: true, force: true });
@@ -259,6 +267,25 @@ function runCheck(source) {
 	});
 }
 
+/** "warming" until the start-up warm-up settles, then "warm" or "failed". */
+let warmup = { state: "warming", ms: null };
+
+function startWarmup() {
+	log("warm-up: loading Mathlib");
+	checkQueue = checkQueue.then(async () => {
+		try {
+			const result = await runCheck("import Mathlib\n", WARMUP_TIMEOUT_MS);
+			const ok = result.exitCode === 0 && !result.timedOut;
+			warmup = { state: ok ? "warm" : "failed", ms: result.ms };
+			if (ok) log(`warm-up: Mathlib warm (${result.ms} ms)`);
+			else log(`warm-up: failed after ${result.ms} ms (${result.timedOut ? "timed out" : `exit ${result.exitCode}`}) ${result.output.slice(0, 300)}`);
+		} catch (err) {
+			warmup = { state: "failed", ms: null };
+			log(`warm-up: failed (${err?.message ?? err})`);
+		}
+	});
+}
+
 function sendJson(res, status, body) {
 	res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
 	res.end(JSON.stringify(body));
@@ -273,6 +300,8 @@ const server = http.createServer((req, res) => {
 			mathlib: mathlibRev(),
 			sessions: sessions.size,
 			maxSessions: MAX_SESSIONS,
+			warming: warmup.state === "warming",
+			warmup,
 		});
 	}
 	if (req.method === "POST" && url.pathname === "/check") {
@@ -336,4 +365,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
 	});
 }
 
-server.listen(PORT, () => log(`Lean service on :${PORT} (project ${PROJECT}, Mathlib ${mathlibRev() ?? "?"}, ${MAX_SESSIONS} session(s))`));
+server.listen(PORT, () => {
+	log(`Lean service on :${PORT} (project ${PROJECT}, Mathlib ${mathlibRev() ?? "?"}, ${MAX_SESSIONS} session(s))`);
+	startWarmup();
+});

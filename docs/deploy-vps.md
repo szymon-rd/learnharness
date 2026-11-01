@@ -77,9 +77,10 @@ The data stays in the Docker volumes across deploys. Anyone who can run workflow
 
 The `lean` service runs Lean 4 with Mathlib for code cells: Lean exercises the tutor can mix in with its checks when a session is about Lean. Turn them on in **Settings → Agent → Code cells: Mixed in** (Off by default). The tutor only uses them in sessions whose plan is marked as a Lean topic, and never two in a row unless you ask.
 
-- In the cell, the theorem statement is locked; you write the proof below it. Lean checks it live: errors are underlined, the goal at the cursor is shown, and the badge says when the proof passes. Type `\to`, `\forall`, `\N`… followed by a space for symbols, or use the symbol bar on a phone.
+- In the cell, the theorem statement is locked; you write the proof below it. Lean checks it live: errors are underlined, the goal at the cursor is shown, and the badge says when the proof passes. Type `\to`, `\forall`, `\N`… followed by a space for symbols (wider screens also have a symbol bar; phones have a Tab key in the cell's header).
 - When you submit, the server checks your proof against the exact statement: no errors, no `sorry`, and only the standard axioms (no `native_decide`). The check catches mistakes; a proof written to fool it on purpose is out of scope.
-- Lean runs in its own container with no internet access, as a normal user without extra privileges, with a memory cap (`LEAN_MEM_LIMIT`, default `3g`). One language server runs at a time (`LEAN_MAX_SESSIONS`, default 1; set 2 on an 8 GB server for two open cells). Idle servers stop after 10 minutes.
+- Lean runs in its own container with no internet access, as a normal user without extra privileges, with a memory cap (`LEAN_MEM_LIMIT`, default `3g`). Mathlib's compiled files are about 6 GB and must fit in memory: below that cap Lean re-reads them from disk on every check and checks time out. On an 8 GB server set `LEAN_MEM_LIMIT=6g` in `deploy/.env`. One language server runs at a time (`LEAN_MAX_SESSIONS`, default 1; set 2 on an 8 GB server for two open cells). Idle servers stop after 10 minutes.
+- When the container starts it loads Mathlib once (about 20 s to a minute; `docker compose logs lean` shows "Mathlib warm"). Checks that arrive meanwhile wait for it, and the transcript says "Lean server starting".
 - To leave Lean out on a small server: `docker compose up -d --build learnharness caddy`. The setting then shows that Lean is not available.
 
 ## Day to day
@@ -126,5 +127,5 @@ From then on the server copy and the desktop copy are separate. They do not sync
 
 - **The certificate fails or the browser shows a TLS error.** Check that `LH_HOST` resolves to this server (`ping <LH_HOST>`) and that ports 80 and 443 are open. Then look at `docker compose logs caddy`.
 - **"This device is not paired"** in API errors means the browser lost the cookie. Open `https://<LH_HOST>/pair` and enter the code again.
-- **A code cell says "Lean offline"** or the badge never leaves "Starting Lean…": check `docker compose ps lean` and `docker compose logs lean`. The first check after a restart takes a few seconds while Lean loads Mathlib. If the container was killed for memory, raise `LEAN_MEM_LIMIT` in `deploy/.env` (and the server's RAM).
+- **A code cell says "Lean offline"** or the badge never leaves "Starting Lean…": check `docker compose ps lean` and `docker compose logs lean`. If every check times out after 120 s, Lean's memory cap is below Mathlib's size (see above). If the container was killed for memory, raise `LEAN_MEM_LIMIT` in `deploy/.env` (and the server's RAM).
 - **The build runs out of memory** on a 1 GB server. Add swap (`fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`) or use a bigger plan.

@@ -278,7 +278,7 @@ async function phone(browser, base) {
 	await step("L04", "the statement is locked: typing into it changes nothing", page, w, async () => {
 		const dock = page.getByTestId("lean-dock");
 		const before = await editorText(dock);
-		await dock.locator(".cm-line").nth(2).tap();
+		await dock.locator(".cm-line", { hasText: "theorem" }).first().tap();
 		await page.keyboard.type("xyz");
 		await page.keyboard.press("Backspace");
 		if ((await editorText(dock)) !== before) throw new Error("the locked statement changed");
@@ -327,20 +327,25 @@ async function phone(browser, base) {
 		await snap(page, "cell-passes-after-completion");
 	});
 
-	await step("L08", "abbreviations: \\to, \\forall, \\N become →, ∀, ℕ; the symbol bar inserts too", page, w, async () => {
+	await step("L08", "abbreviations: \\to, \\forall, \\N, \\< become →, ∀, ℕ, ⟨; the header's Tab key indents", page, w, async () => {
 		const dock = page.getByTestId("lean-dock");
 		await page.keyboard.press("End");
 		await page.keyboard.press("Enter");
-		await page.keyboard.type("  -- \\forall n \\in \\N, n \\to ", { delay: 25 });
-		await dock.getByRole("toolbar", { name: "Lean symbols" }).getByRole("button", { name: "⟨", exact: true }).tap();
+		await page.keyboard.type("-- \\forall n \\in \\N, n \\to \\< ", { delay: 25 });
+		const typed = await editorText(dock);
+		if (!/-- ∀ n ∈ ℕ, n → ⟨/.test(typed)) throw new Error(`abbreviations not expanded: ${typed.split("\n").pop()}`);
+		// Phones have no symbol row: the header's Tab key inserts two spaces.
+		await dock.getByTestId("lean-tab-key").tap();
 		const text = await editorText(dock);
-		if (!/-- ∀ n ∈ ℕ, n → ⟨/.test(text)) throw new Error(`abbreviations not expanded: ${text.split("\n").pop()}`);
+		if (text.length !== typed.length + 2 || !/-- ∀ n ∈ ℕ, n → ⟨/.test(text)) throw new Error(`Tab key did not insert two spaces: ${text.split("\n").pop()}`);
 		await waitStatus(dock, "passes", 60_000);
 		await snap(page, "cell-abbreviations");
 	});
 
 	await step("L09", "submit a passing proof: the server's verdict card, then the tutor reacts", page, w, async () => {
 		const dock = page.getByTestId("lean-dock");
+		// Phones fold "Your thinking" into a chip beside Submit.
+		await dock.getByTestId("thinking-chip").tap();
 		await dock.locator("textarea").tap();
 		await dock.locator("textarea").fill("Found Nat.add_comm through completion.");
 		await dock.getByRole("button", { name: "Submit proof" }).tap();
@@ -488,7 +493,23 @@ async function desktop(browser, base, s) {
 	await context.close();
 }
 
+/** A freshly started Lean service loads Mathlib before its first check
+ *  (/health `warming`); wait for that so step timeouts measure the cell. */
+async function waitForLeanWarm() {
+	const started = Date.now();
+	for (;;) {
+		const health = await fetch(`${LEAN_URL}/health`).then((r) => r.json()).catch(() => null);
+		if (health && health.warming === false) {
+			console.log(`Lean warm (${health.warmup?.state ?? "?"}) after ${Math.round((Date.now() - started) / 1000)} s of waiting`);
+			return;
+		}
+		if (Date.now() - started > 600_000) throw new Error(`Lean still warming after 10 minutes: ${JSON.stringify(health)}`);
+		await sleep(2000);
+	}
+}
+
 async function main() {
+	await waitForLeanWarm();
 	const server = await startServer();
 	console.log(`server: ${server.url}\nLean: ${LEAN_URL}\nscreenshots: ${OUT}\n`);
 	const browser = await chromium.launch();

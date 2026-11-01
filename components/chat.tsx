@@ -18,6 +18,9 @@ import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-e
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { BrailleSpinner } from "@/components/braille-spinner";
 import { LiveToolCard } from "@/components/artifacts/live-tool-card";
+import { LeanPreparingLine } from "@/components/lean/lean-preparing-line";
+import { useIsPhone, useSoftKeyboardOpen } from "@/components/phone-layout";
+import { ThinkingChip } from "@/components/thinking-chip";
 import { Separator } from "@/components/ui/separator";
 import { AnsweredCard } from "@/components/answered-card";
 import { artifactRenderers } from "@/components/artifacts";
@@ -708,6 +711,7 @@ export function Chat({
 		];
 	}, []);
 	useFieldCycle(cycleChatFields);
+	const phoneView = useIsPhone();
 	const dictation = useDictation({
 		// Ref-first (see textRef): the join is computed from the mirror so a
 		// send resuming after `await finish()` reads the dictated tail.
@@ -1596,7 +1600,7 @@ export function Chat({
 					contextTokens={contextTokens}
 					pricing={pricing}
 					onReserve={setDockReserve}
-					dictationSlot={<DictationBar dictation={dictation} />}
+					dictationSlot={<DictationBar dictation={dictation} compact={phoneView} />}
 					dictationCancel={dictation.cancel}
 					queuedSteers={visibleQueuedSteers(steerQueue, nativeMessages)}
 					setupCta={
@@ -2020,6 +2024,11 @@ const TranscriptRow = memo(function TranscriptRow({
 												<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} />
 											);
 										}
+										// A Lean exercise stays input-streaming while its reference
+										// proof is checked; say so (and when Lean is still starting).
+										if (part.type === "tool-lean_exercise" && part.state === "input-streaming") {
+											return <LeanPreparingLine key={pi} />;
+										}
 										return null;
 									}
 									default: {
@@ -2141,6 +2150,11 @@ function DockOverlay({
 	// revealed, the normal collapse machine rules apply untouched.
 	const [revealed, setRevealed] = useState(false);
 	const revealPending = requiresReveal && !revealed;
+	// Phone declutter (owner, 2026-11-01): the reading-thinking field folds
+	// into the slim row's chip; the row hides while the keyboard is up.
+	const phone = useIsPhone();
+	const keyboardOpen = useSoftKeyboardOpen();
+	const [notesOpen, setNotesOpen] = useState(false);
 
 	const pendingId = pending?.toolCallId ?? null;
 	const initialPendingRef = useRef(pendingId);
@@ -2158,6 +2172,7 @@ function DockOverlay({
 	if (pendingId !== prevPendingIdRef.current) {
 		const wasQuestion = prevPendingIdRef.current !== null;
 		prevPendingIdRef.current = pendingId;
+		setNotesOpen(false);
 		if (pendingId && requiresReveal) {
 			const arrival = revealArrival(wasQuestion);
 			setExpanded(arrival.expanded);
@@ -2489,6 +2504,8 @@ function DockOverlay({
 					    (the dock reclaims then). Rides the check answer on submit. */}
 					{pending && requiresReveal && (
 						<ReadingThinkingField
+							hidden={phone && !notesOpen}
+							onHide={phone ? () => setNotesOpen(false) : undefined}
 							value={readingThinking}
 							onChange={onReadingThinking}
 							onEscape={dictationCancel}
@@ -2551,14 +2568,29 @@ function DockOverlay({
 					{/* The stats row: beneath the composer/question shell, not
 					    flush to the screen bottom — static height, outside the
 					    morphing shell so it never joins a height animation. */}
-					<StatsBar
-						turns={turns}
-						contextTokens={contextTokens}
-						pricing={pricing}
-						dictationSlot={dictationSlot}
-						chatId={chatId}
-						onModelChange={onModelChange}
-					/>
+					{/* Phones: the slim row (mic, notes, model), hidden while the
+					    on-screen keyboard is up (owner, 2026-11-01). */}
+					{!(phone && keyboardOpen) && (
+						<StatsBar
+							turns={turns}
+							contextTokens={contextTokens}
+							pricing={pricing}
+							dictationSlot={dictationSlot}
+							chatId={chatId}
+							onModelChange={onModelChange}
+							slim={phone}
+							notesSlot={
+								phone && pending && requiresReveal ? (
+									<ThinkingChip
+										value={readingThinking}
+										testId="reading-notes"
+										className="h-9 rounded-full bg-card/85 shadow-lg backdrop-blur"
+										onOpen={() => setNotesOpen((o) => !o)}
+									/>
+								) : undefined
+							}
+						/>
+					)}
 					{/* The scroll-down disc (moved here from the Conversation,
 					    owner refinement round 2026-09-24): anchored to the BLOCK's
 					    top edge — above the composer shell AND the stats row, in

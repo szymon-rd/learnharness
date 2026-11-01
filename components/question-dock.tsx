@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
+import { useIsPhone } from "@/components/phone-layout";
+import { ThinkingChip } from "@/components/thinking-chip";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
@@ -144,6 +146,8 @@ export function QuestionDock({
 						onSubmit={onSubmit}
 						initialDraft={initialDraft}
 						onSaveDraft={onSaveDraft}
+						onEscape={onEscape}
+						dictationClaim={dictationClaim}
 						compactionRunning={compactionRunning}
 					/>
 				</div>
@@ -469,6 +473,11 @@ function QuestionDockForm({
 	const rootRef = useRef<HTMLDivElement>(null);
 	const otherInputRef = useRef<HTMLInputElement>(null);
 	const thinkingRef = useRef<HTMLTextAreaElement>(null);
+	// Phones (owner, 2026-11-01): "Your thinking" starts as a chip beside
+	// Submit; dictation fills it unseen, a tap expands it.
+	const phone = useIsPhone();
+	const [thinkingOpen, setThinkingOpen] = useState(false);
+	const showThinking = !phone || thinkingOpen;
 	// One row past the options is the trailing row: quiz → don't-know,
 	// ask → Other (a question never has both). Text mode (ask/explain)
 	// has no rows — the composer IS the answer surface.
@@ -880,9 +889,16 @@ function QuestionDockForm({
 					data-testid={qd.mode === "text" ? "answer-field" : "thinking-field"}
 					className="rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 				>
-					<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						{qd.mode === "text" ? "Your answer" : "YOUR THINKING"}
-					</div>
+					{(qd.mode === "text" || showThinking) && (
+						<div className="flex items-center justify-between px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+							<span>{qd.mode === "text" ? "Your answer" : "YOUR THINKING"}</span>
+							{qd.mode !== "text" && phone && (
+								<button type="button" data-testid="thinking-hide" className="normal-case tracking-normal" onClick={() => setThinkingOpen(false)}>
+									Hide
+								</button>
+							)}
+						</div>
+					)}
 					{qd.mode === "text" ? (
 						<textarea
 							value={text}
@@ -912,9 +928,10 @@ function QuestionDockForm({
 							rows={1}
 							className="field-sizing-content lh-input max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 						/>
-					) : (
+					) : !showThinking ? null : (
 						<textarea
 							ref={thinkingRef}
+							autoFocus={phone}
 							value={thinking}
 							onChange={(e) => {
 								thinkingTextRef.current = e.target.value;
@@ -951,10 +968,14 @@ function QuestionDockForm({
 						/>
 					)}
 					<div className="flex items-center justify-between gap-2 p-1">
-						<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
+						{qd.mode !== "text" && !showThinking ? (
+							<ThinkingChip value={thinking} onOpen={() => setThinkingOpen(true)} />
+						) : (
+							<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
 								{/* Touch keyboards have no ⇧↵ chord — the hint is keyboard-only. */}
-						{compactionRunning ? "compacting session…" : <span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>}
-						</span>
+								{compactionRunning ? "compacting session…" : <span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>}
+							</span>
+						)}
 						<Button
 							type="submit"
 							disabled={!canSubmit || compactionRunning}

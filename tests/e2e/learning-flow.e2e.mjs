@@ -366,6 +366,12 @@ async function questionDock(page, timeout = 60_000) {
 
 /** Answer the pending option question: tap the option, optionally set the
  *  confidence and type thinking, submit. */
+/** Phones fold "Your thinking" into a chip beside Submit: open it first. */
+async function openThinking(dock) {
+	const chip = dock.getByTestId("thinking-chip");
+	if (await chip.isVisible().catch(() => false)) await chip.tap();
+}
+
 async function answerOptions(page, { option, confidence, thinking, dontKnow = false }) {
 	const dock = await questionDock(page);
 	if (dontKnow) await dock.getByText("I don't know", { exact: true }).tap();
@@ -381,6 +387,7 @@ async function answerOptions(page, { option, confidence, thinking, dontKnow = fa
 		}
 	}
 	if (thinking) {
+		await openThinking(dock);
 		const field = dock.locator("textarea").first();
 		await field.tap();
 		await field.fill(thinking);
@@ -694,6 +701,7 @@ async function phoneFlow(browser, base, proxy) {
 
 	await step("e2", "practice: answer in the thinking field; graded (conclude card)", page, w, async () => {
 		const dock = page.getByTestId("practice-dock");
+		await openThinking(dock);
 		const field = dock.locator("textarea");
 		await field.tap();
 		await field.fill("After a red, 2 red and 2 blue are left, so 2/4 = 1/2.");
@@ -709,6 +717,7 @@ async function phoneFlow(browser, base, proxy) {
 		await next.tap();
 		const dock = page.getByTestId("practice-dock");
 		await dock.getByText("1% of emails are spam").waitFor({ timeout: 60_000 });
+		await openThinking(dock);
 		const field = dock.locator("textarea");
 		await field.tap();
 		await field.fill("95% of flagged mails are spam.");

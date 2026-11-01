@@ -35,7 +35,14 @@ export function StatsBar({
 	chatId,
 	leadingSlot,
 	onModelChange,
+	slim = false,
+	notesSlot,
 }: {
+	/** The phone slim row (owner, 2026-11-01): one line — mic, notes, model.
+	 *  The context/cost summary moves into the model menu's header. */
+	slim?: boolean;
+	/** Slim row only: the reading-thinking notes button, after the mic. */
+	notesSlot?: ReactNode;
 	turns: TurnUsage[];
 	contextTokens?: number | null;
 	pricing?: SessionPricing;
@@ -98,6 +105,36 @@ export function StatsBar({
 	const pricedCount = turns.length - unpriced - subscription;
 	const providers = pricing?.subscriptionProviders ?? subscriptionLabels(turns.map((turn) => turn.model));
 	const costLabel = planCostLabel(pricedCount > 0 ? cost : null, providers);
+
+	if (slim) {
+		return (
+			<div
+				data-testid="stats-bar"
+				data-slim=""
+				className="pointer-events-auto relative flex items-center gap-2 px-1 pt-2 text-xs text-muted-foreground"
+			>
+				{/* The mic; while recording its meter takes the free width. */}
+				{dictationSlot && <div className="flex min-w-0 flex-1 items-center gap-2">{dictationSlot}{notesSlot}</div>}
+				{!dictationSlot && <div className="flex min-w-0 flex-1 items-center">{notesSlot}</div>}
+				<ModelControl
+					chatId={chatId}
+					onModelChange={modelChanged}
+					menuHeader={
+						(chatId || turns.length > 0) && (
+							<div data-testid="stats-summary" className="mb-1.5 flex justify-between gap-2 border-b px-1 pb-1.5 tabular-nums text-muted-foreground">
+								<span>Session</span>
+								<span>
+									<span data-testid="stats-context">{contextLabel}</span>
+									<span aria-hidden> · </span>
+									<span data-testid="stats-cost">{costLabel}</span>
+								</span>
+							</div>
+						)
+					}
+				/>
+			</div>
+		);
+	}
 
 	return (
 		<div

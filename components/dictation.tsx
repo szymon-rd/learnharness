@@ -651,7 +651,15 @@ export function useDictation({ append }: { append: (text: string) => void }): Di
  *   error     the wide button again, label swapped for the failure reason
  *             (full text in the tooltip), cleared on the next click.
  */
-export function DictationBar({ dictation }: { dictation: Dictation }) {
+export function DictationBar({
+	dictation,
+	compact = false,
+}: {
+	dictation: Dictation;
+	/** Phone slim row (owner, 2026-11-01): idle is a round mic button, not
+	 *  the full-width "Dictate" bar. Recording still unfurls the meter. */
+	compact?: boolean;
+}) {
 	const { phase, error, levelRef, toggle, active, clearError } = dictation;
 	const { open: openSettings } = useSettingsDialog();
 	/** The keyless click (zero-keys wave, owner dictation trio): the errored
@@ -699,6 +707,20 @@ export function DictationBar({ dictation }: { dictation: Dictation }) {
 		ro.observe(el);
 		return () => ro.disconnect();
 	}, [active]);
+
+	if (!active && compact && !error) {
+		return (
+			<button
+				type="button"
+				onClick={toggle}
+				aria-label="Start dictation"
+				data-testid="dictation-toggle"
+				className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border/60 bg-card/85 text-muted-foreground shadow-lg backdrop-blur transition-colors hover:text-foreground"
+			>
+				<MicIcon className="size-4" />
+			</button>
+		);
+	}
 
 	if (!active) {
 		return (

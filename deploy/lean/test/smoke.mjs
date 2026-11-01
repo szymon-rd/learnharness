@@ -37,6 +37,8 @@ async function check() {
 	const health = await (await fetch(`${target}/health`)).json();
 	if (!health.ok || !health.toolchain || !health.mathlib) fail(`health: ${JSON.stringify(health)}`);
 	ok(`health: ${health.toolchain}, Mathlib ${health.mathlib}`);
+	if (typeof health.warming !== "boolean" || !health.warmup?.state) fail(`health has no warm-up state: ${JSON.stringify(health)}`);
+	ok(`warm-up state reported (${health.warmup.state})`);
 
 	const run = async (name, source) => {
 		const res = await fetch(`${target}/check`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ source }) });

@@ -4,13 +4,14 @@
  * The Lean code cell editor (owner, 2026-10-30): the exercise's locked
  * prelude + statement above the learner's editable proof, checked live by
  * the Lean language server (/lean/lsp): errors underlined, the goal at the
- * cursor below, and a status badge — "Passes" before submitting. On a
- * phone, a symbol bar inserts →, ∀, ℕ, …; on a keyboard, `\to` + space
+ * cursor below, and a status badge — "Passes" before submitting. On wider
+ * screens a symbol bar inserts →, ∀, ℕ, …; phones get only a Tab key in the
+ * header (owner, 2026-11-01). Everywhere, `\to` + space
  * expands like in the Lean editors.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, RangeSetBuilder, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, keymap, ViewPlugin, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { HighlightStyle, indentUnit, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
@@ -321,9 +322,29 @@ export interface LeanCellProps {
 	initialProof: string;
 	onProofChange: (proof: string) => void;
 	onStatus?: (status: LeanCellStatus) => void;
+	/** Whether the learner is editing the cell. True at once on focus; false
+	 *  only after a short delay, so a tap on Submit (which blurs the editor)
+	 *  lands before the docks unfold their layout. */
+	onEditingChange?: (editing: boolean) => void;
+	/** Hide the locked prelude lines (`import Mathlib` and the blank line):
+	 *  phones fold them while the keyboard is up (owner, 2026-11-01). */
+	hidePrelude?: boolean;
 }
 
-export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStatus }: LeanCellProps) {
+/** Display-only: a hidden block over the prelude lines (before the statement). */
+function preludeHidden(statementLine: number): Extension {
+	if (statementLine < 1) return [];
+	return EditorView.decorations.compute([], (state) => {
+		if (state.doc.lines <= statementLine) return Decoration.none;
+		const to = state.doc.line(statementLine).to;
+		return Decoration.set([Decoration.replace({ block: true }).range(0, to)]);
+	});
+}
+
+/** How long "editing" outlives a blur (see onEditingChange). */
+const EDITING_RELEASE_MS = 400;
+
+export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStatus, onEditingChange, hidePrelude = false }: LeanCellProps) {
 	const host = useRef<HTMLDivElement>(null);
 	const view = useRef<EditorView | null>(null);
 	const session = useRef<LeanSession | null>(null);
@@ -345,6 +366,11 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 	const exerciseKey = `${exercise.prelude}\u0000${exercise.statement}`;
 	const onProofChangeRef = useRef(onProofChange);
 	onProofChangeRef.current = onProofChange;
+	const onEditingChangeRef = useRef(onEditingChange);
+	onEditingChangeRef.current = onEditingChange;
+	const preludeSlot = useRef(new Compartment());
+	const hidePreludeRef = useRef(hidePrelude);
+	hidePreludeRef.current = hidePrelude;
 
 	const layout = useMemo(() => cellLayout(exercise), [exercise]);
 	const prefix = useMemo(() => cellDocument(exercise, "").slice(0, -1), [exercise]); // everything before the proof
@@ -394,6 +420,8 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 		if (!host.current) return;
 		let changeTimer: ReturnType<typeof setTimeout> | undefined;
 		let goalTimer: ReturnType<typeof setTimeout> | undefined;
+		let editingTimer: ReturnType<typeof setTimeout> | undefined;
+		const statementLine = cellLayout(exerciseRef.current).statementLine;
 		const v = new EditorView({
 			parent: host.current,
 			state: EditorState.create({
@@ -411,6 +439,7 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 					linter(null),
 					lintGutter(),
 					cellTheme,
+					preludeSlot.current.of(hidePreludeRef.current ? preludeHidden(statementLine) : []),
 					EditorView.lineWrapping,
 					EditorView.contentAttributes.of({ autocapitalize: "off", autocorrect: "off", spellcheck: "false", "aria-label": "Lean proof" }),
 					EditorView.updateListener.of((u) => {
@@ -425,6 +454,11 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 						if (u.docChanged || u.selectionSet) {
 							clearTimeout(goalTimer);
 							goalTimer = setTimeout(refreshGoals, 300);
+						}
+						if (u.focusChanged) {
+							clearTimeout(editingTimer);
+							if (u.view.hasFocus) onEditingChangeRef.current?.(true);
+							else editingTimer = setTimeout(() => onEditingChangeRef.current?.(false), EDITING_RELEASE_MS);
 						}
 					}),
 				],
@@ -444,11 +478,19 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 			document.removeEventListener("pointerdown", outside, true);
 			clearTimeout(changeTimer);
 			clearTimeout(goalTimer);
+			clearTimeout(editingTimer);
 			v.destroy();
 			view.current = null;
 		};
 		// The cell is fixed for its lifetime; the initial proof is read once.
 	}, [exerciseKey, lockedEnd]);
+
+	// Phones fold the prelude while editing (display only; the text is unchanged).
+	useEffect(() => {
+		const v = view.current;
+		if (!v) return;
+		v.dispatch({ effects: preludeSlot.current.reconfigure(hidePrelude ? preludeHidden(layout.statementLine) : []) });
+	}, [hidePrelude, layout.statementLine]);
 
 	// The Lean session (reconnects on retry).
 	useEffect(() => {
@@ -504,14 +546,28 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 			<div className="overflow-hidden rounded-lg border border-border/70 bg-background">
 				<div className="flex items-center justify-between gap-2 border-b border-border/60 px-2.5 py-1.5 text-xs">
 					<span className="font-medium text-muted-foreground">Lean 4 · Mathlib</span>
-					<span className={cn("rounded-full px-2 py-0.5 font-medium", STATUS_CLASS[status])} data-testid="lean-status" data-status={status}>
-						{STATUS_TEXT[status]}
+					<span className="flex items-center gap-1.5">
+						{/* Phone: the only key a touch keyboard lacks; symbols are
+						    typed as \to, \forall, … (mousedown keeps the editor's focus). */}
+						<button
+							type="button"
+							data-testid="lean-tab-key"
+							className="h-7 shrink-0 rounded-md border border-border/60 px-2 text-xs text-muted-foreground sm:hidden"
+							onMouseDown={(e) => e.preventDefault()}
+							onClick={() => insert("  ")}
+						>
+							Tab
+						</button>
+						<span className={cn("rounded-full px-2 py-0.5 font-medium", STATUS_CLASS[status])} data-testid="lean-status" data-status={status}>
+							{STATUS_TEXT[status]}
+						</span>
 					</span>
 				</div>
 				<div ref={host} data-proof-line={layout.proofLine} />
 			</div>
-			{/* Phone symbol bar: mousedown keeps the editor's focus. */}
-			<div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5" role="toolbar" aria-label="Lean symbols">
+			{/* Symbol bar (wider screens; phones keep only the header's Tab):
+			    mousedown keeps the editor's focus. */}
+			<div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-0.5 max-sm:hidden" role="toolbar" aria-label="Lean symbols">
 				<button
 					type="button"
 					className="h-8 shrink-0 rounded-md border border-border/60 px-2 text-xs text-muted-foreground"

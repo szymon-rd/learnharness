@@ -6,9 +6,11 @@ import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
+import { useIsPhone } from "@/components/phone-layout";
+import { ThinkingChip } from "@/components/thinking-chip";
 import { cn } from "@/lib/utils";
 import { LeanCell, type LeanCellStatus } from "@/components/lean/lean-cell";
-import { parseLeanExerciseInput } from "@/components/lean/lean-dock";
+import { parseLeanExerciseInput, TaskFold } from "@/components/lean/lean-dock";
 import { resolveLeanExercise } from "@/src/core";
 
 /**
@@ -67,6 +69,15 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	}, [input.lean, input.statement]);
 	const proofRef = useRef(lean?.starter ?? "");
 	const [leanStatus, setLeanStatus] = useState<LeanCellStatus>("connecting");
+	// Phones (owner, 2026-11-01): "Your thinking" starts as a chip beside
+	// Submit; dictation fills it unseen, a tap expands it.
+	const phone = useIsPhone();
+	const [thinkingOpen, setThinkingOpen] = useState(false);
+	const showThinking = !phone || thinkingOpen;
+	// Phones, while typing in a Lean cell: the statement folds to one line and
+	// the cell hides its `import` lines (owner, 2026-11-01).
+	const [editing, setEditing] = useState(false);
+	const fold = phone && editing && lean !== null;
 
 	useDictationTarget(
 		useCallback(
@@ -120,12 +131,18 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 			    markdown + LaTeX rendered, capped by the measured column
 			    (--dock-max-h; the old fixed 40vh cut long problems short). */}
 			<div data-dock-scroll-area="" className="max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2">
-				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
-				<div className="lh-prose text-[15px]">
-					<ToolContentResponse>{input.statement}</ToolContentResponse>
-				</div>
+				{fold ? (
+					<TaskFold text={input.statement} label="Problem" />
+				) : (
+					<>
+						<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
+						<div className="lh-prose text-[15px]">
+							<ToolContentResponse>{input.statement}</ToolContentResponse>
+						</div>
+					</>
+				)}
 				{lean && (
-					<div className="mt-3">
+					<div className={fold ? undefined : "mt-3"}>
 						<LeanCell
 							exercise={lean}
 							cellId={problemCallId}
@@ -134,6 +151,8 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 								proofRef.current = p;
 							}}
 							onStatus={setLeanStatus}
+							onEditingChange={setEditing}
+							hidePrelude={fold}
 						/>
 					</div>
 				)}
@@ -145,11 +164,20 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 				data-testid="practice-thinking-field"
 				className="m-1.5 rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 			>
-				<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-					YOUR THINKING
+				{showThinking && (
+				<div className="flex items-center justify-between px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+					<span>YOUR THINKING</span>
+					{phone && (
+						<button type="button" data-testid="thinking-hide" className="normal-case tracking-normal" onClick={() => setThinkingOpen(false)}>
+							Hide
+						</button>
+					)}
 				</div>
+				)}
+				{showThinking && (
 				<textarea
 					value={thinking}
+					autoFocus={phone}
 					onChange={(e) => {
 						thinkingRef.current = e.target.value;
 						setThinking(e.target.value);
@@ -177,11 +205,15 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 						"field-sizing-content lh-input max-h-64 min-h-16 w-full resize-none bg-transparent px-2.5 pb-2 outline-none placeholder:text-muted-foreground",
 					)}
 				/>
+				)}
 				{/* The submit row (owner round 4, 2026-10-05): IDENTICAL to the
 				    question dock's — hint left, the SAME Button (h-9, px-3.5),
 				    one p-1 row. Corner radii concentric: shell 16 − m-1.5 (6) =
 				    field 10 − p-1 (4) = button 6. */}
 				<div className="flex items-center justify-between gap-2 p-1">
+					{!showThinking ? (
+						<ThinkingChip value={thinking} onOpen={() => setThinkingOpen(true)} />
+					) : (
 					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
 						{/* Touch keyboards have no ⇧↵ chord — the hint is keyboard-only. */}
 						{compactionRunning ? (
@@ -194,6 +226,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 							<span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>
 						)}
 					</span>
+					)}
 					<Button
 						type="button"
 						data-testid="practice-send"

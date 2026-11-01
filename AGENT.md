@@ -14,9 +14,9 @@ Owner preferences that held throughout:
 
 ## 1. Where the app runs
 
-- **VPS:** Hetzner. Login user `jaca` (uses `sudo` for docker). Checkout at
-  `~/learnharness` (the owner runs `sudo docker compose …` from
-  `~/learnharness/deploy`). Domain **learnharness.computenode.io** (Cloudflare
+- **VPS:** Hetzner, 8 GB RAM / 4 vCPU (rescaled 1 Nov 2026). Login user
+  `jaca`. Checkout at `~/Projects/learnharness` (the owner runs
+  `sudo docker compose …` from `~/Projects/learnharness/deploy`). Domain **learnharness.computenode.io** (Cloudflare
   A record, DNS only, so Caddy gets Let's Encrypt directly).
 - **Stack:** `deploy/docker-compose.yml` — `learnharness` (Next.js phone server,
   `scripts/phone-server.mjs`, port 3210, data in volume `learnharness-data` at
@@ -74,61 +74,28 @@ Owner preferences that held throughout:
    Submit. Autocompletion and the phone-readable "Lean says" panel were added.
    Screenshot page: https://claude.ai/artifact/QM9jFZLJBePMTkyJmZtrfo
 
-## 3. Open problem (why the owner is running an agent on the VPS)
+## 3. The "This operation was aborted" problem (solved 1 Nov 2026)
 
-In a real teaching session ("Mathem…", model `claude-opus-5-5`, thinking
-medium) the tutor wrote "Now write one yourself, with live feedback…" and was
-about to pose a Lean exercise. The transcript then showed **"Retrying…"**
-followed by the error banner **"Something went wrong: This operation was
-aborted"** with a Retry button. Pressing Retry **did not fix it**. The owner
-reports that the log command suggested
-(`sudo docker compose logs --tail 150 lean learnharness`) gave **"no such"**
-— most likely the `lean` service does not exist/run on the server (e.g. the
-compose file on the server predates the Lean service, the image never built,
-or the container exited). Unverified — check first.
+Debugged on the VPS. Two separate causes:
+- **Every Lean check timed out (120 s).** Mathlib's compiled files are ~6 GB
+  and must stay in memory; the server had 3.8 GB RAM and Lean a 3 GB cap, so
+  `import Mathlib` re-read them from disk (~16 GB of reads per check). The
+  owner rescaled the server to 8 GB / 4 vCPU and set `LEAN_MEM_LIMIT=6g` in
+  `deploy/.env`; checks now take 7–12 s warm, ~70 s cold.
+- **The abort itself came from the client** (`POST /api/activity/abort`)
+  while the tutor waited on that check — most likely Stop or Enter on the
+  empty composer (both abort without confirmation). pi-ai records an abort
+  that happens before a request as `stopReason: "error"` (`api/lazy.js`), so
+  `error` in the record does not rule out a user abort.
 
-What is known from the code (cloud session, no server access):
-- "Retrying…" is drawn for a tool part that ended in `output-error` whose
-  text is not "Operation aborted" (`components/chat.tsx`). So a tool call
-  (very likely `lean_exercise`) failed first and the agent was retrying.
-- `lean_exercise` (`src/agent/tools/lean.ts`) checks the tutor's reference
-  proof with Lean **before** posing the cell, via `POST $LH_LEAN_URL/check`
-  (`src/server/lean-service.ts`, 200 s client timeout). If Lean is
-  unreachable it returns "Lean is unavailable right now (…)" as a tool error.
-- `LH_LEAN_URL=http://lean:3300` is set in compose for the app **whether or
-  not the lean container runs**; `codeCellsEnabled` only checks that the URL
-  is set, so the tool is offered even when Lean is down. (Likely bug: gate on
-  `/health` or handle "down" gracefully.)
-- The exact text "This operation was aborted" is Node's default AbortError.
-  In pi-ai's Anthropic provider it comes from `signal.throwIfAborted()` at the
-  start of a model request (`node_modules/@earendil-works/pi-ai/dist/api/anthropic-messages.js`),
-  i.e. the turn's run signal was aborted; in this app that happens only via
-  `agent.abort()` ← `abortTurn()` ← `POST /api/activity/abort` (Stop, the Esc
-  chain, or an "End" button in the Background agents panel). That doesn't
-  explain an abort without user action, so verify on the server instead of
-  trusting this reasoning. Also check whether the provider is Anthropic API
-  vs a subscription connection (`src/agent/subscription-*`), which aborts
-  differently.
+Follow-ups done: the Lean service warms Mathlib on start (`/health`
+`warming`), the transcript shows "Lean server starting" while it does.
+Server notes: the checkout is `~/Projects/learnharness` (not `~/learnharness`);
+the owner added `jaca` to the `docker` group for agent debugging.
 
-Suggested first steps on the VPS:
-1. `cd ~/learnharness && git log -1 --oneline` — is the checkout at current main?
-2. `cd deploy && sudo docker compose ps -a` — is there a `lean` service/container, is it up?
-   `sudo docker compose config --services` lists what the compose file defines.
-3. `sudo docker compose logs --tail 200 learnharness` and, if it exists, `… lean`.
-4. `sudo docker compose exec learnharness node -e 'fetch("http://lean:3300/health").then(r=>r.text()).then(console.log,console.error)'`
-5. Look at the failing session's record in the data volume (`/data/data/chats/<id>.json`):
-   the last assistant message's tool calls/results show the actual tool error
-   text and the turn error.
-6. Memory: Lean + Mathlib needs ~1.5 GB per language-server session plus the
-   app; `LEAN_MEM_LIMIT` defaults to 3g. Check `free -m`, `sudo docker stats --no-stream`,
-   and `dmesg | grep -i oom`.
-7. First deploy of the Lean image downloads Mathlib's cache (several GB) and
-   needs ~15 GB free disk: `df -h /`.
-
-Improvements the owner was offered and has **not yet approved** (ask first):
-show "Checking the exercise with Lean…" while the reference proof is checked;
-warm Mathlib when the Lean service starts; cap the reference check (~60 s) and
-fall back to a normal question.
+Still open (offered, not approved): Lean exercise cells appear before the
+reference proof passes; a failed `lean_exercise` counts toward "not two in a
+row"; code cells stay on when Lean is down; a confirmation for Stop.
 
 ## 4. Code cells: how it works (file map)
 
@@ -176,7 +143,14 @@ fall back to a normal question.
   Caddy) and job "Code cells QA" (`tests/e2e/lean-qa.e2e.mjs`, scripted tutor
   in `tests/e2e/scripted-model.mjs`, real Lean, 20 steps, screenshots pushed
   to branch `qa/lean-screenshots`).
-- Known gap: the "Your thinking" field in Lean exercises is not a dictation target.
+- Phone layout (1 Nov 2026, phone widths only): `components/phone-layout.ts`
+  (`useIsPhone`, `useSoftKeyboardOpen`), `components/thinking-chip.tsx` (thinking
+  fields fold to "Thinking · N words"; dictation fills them unseen), the slim
+  row in `components/stats-bar.tsx` (`slim`: mic, notes, model; context/cost in
+  the model menu), Tab key in the cell header instead of the symbol bar, and
+  while editing a cell the task folds to one line and `import` lines hide
+  (`LeanCell` `hidePrelude`, `TaskFold`). Layout changes on blur wait 400 ms so
+  a tap on Submit is not moved under the finger.
 
 ## 5. Working notes
 
