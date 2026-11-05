@@ -20,6 +20,7 @@
 import { Type, type Static } from "typebox";
 import { stripModelValueDebris } from "./value-debris.ts";
 import type { LeanVerdict } from "./lean-cell.ts";
+import type { TlaVerdict } from "./tla-cell.ts";
 
 // ─── shared types ───────────────────────────────────────────────────────────
 
@@ -365,7 +366,7 @@ export const QUIZ_TOOL_NAMES = ["quiz", "explain"] as const;
 /** Every teach-phase tool whose `nodeId` names the plan node it checks:
  *  the quizzing tools plus the Lean code cell (owner, 2026-10-30). The
  *  teach seam and the plan-position fold read these. */
-export const NODE_TAGGED_TOOL_NAMES = [...QUIZ_TOOL_NAMES, "lean_exercise"] as const;
+export const NODE_TAGGED_TOOL_NAMES = [...QUIZ_TOOL_NAMES, "lean_exercise", "tla_exercise"] as const;
 
 /** The TEACHER's quiz declaration (base + the position field). */
 export const quizInputSchema = quizInputObject;
@@ -410,7 +411,7 @@ export interface OptionAnswer {
 	index: number; // 1-based display index
 }
 
-export type QuestionKind = "quiz" | "ask" | "explain" | "lean";
+export type QuestionKind = "quiz" | "ask" | "explain" | "lean" | "tla";
 
 /** A Lean code cell's answer (kind "lean"): the learner's proof and the
  *  server's verdict on it (src/server/lean-answer.ts — never the client's). */
@@ -422,6 +423,18 @@ export interface LeanAnswerDetail {
 	summary: string;
 	/** The teacher's reference proof, for the answered card. */
 	referenceProof?: string;
+}
+
+/** A TLA+ code cell's answer (kind "tla"): the learner's solution and the
+ *  server's verdict on it (src/server/tla-answer.ts — never the client's). */
+export interface TlaAnswerDetail {
+	solution: string;
+	/** The server verdict (core/tla-cell.ts TlaVerdict). */
+	verdict: TlaVerdict;
+	/** One-line verdict text (tlaVerdictSummary). */
+	summary: string;
+	/** The teacher's reference solution, for the answered card. */
+	referenceSolution?: string;
 }
 export type SelectMode = "single-select" | "multi-select";
 export type QuestionMode = SelectMode | "text";
@@ -488,6 +501,8 @@ export interface QuestionAnswerData {
 	dismissed?: boolean;
 	/** lean only: the proof and the server's verdict. */
 	lean?: LeanAnswerDetail;
+	/** tla only: the solution and the server's verdict. */
+	tla?: TlaAnswerDetail;
 	answeredAt: string;
 }
 
@@ -826,6 +841,28 @@ export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, un
 		out.verdict = ad.lean.summary;
 		if (ad.lean.verdict.errors.length) out.errors = ad.lean.verdict.errors;
 		if (ad.lean.verdict.disallowedAxioms?.length) out.disallowedAxioms = ad.lean.verdict.disallowedAxioms;
+	}
+	// TLA+ code cell: the solution and TLC's verdict. A pass asks the
+	// teacher to judge whether the solution does what the task asked
+	// (owner, 2026-11-05): tla_review may overrule it.
+	if (ad.tla) Object.assign(out, tlaAnswerForModel(ad.tla));
+	return out;
+}
+
+/** The model's view of a TLA+ answer (the exercise answer and a practice
+ *  submission share it). */
+export function tlaAnswerForModel(t: TlaAnswerDetail, context: "exercise" | "practice" = "exercise"): Record<string, unknown> {
+	const v = t.verdict;
+	const out: Record<string, unknown> = { solution: t.solution, verdict: t.summary };
+	if (v.errors.length) out.errors = v.errors.map((e) => ({ ...(e.line !== null ? { line: e.line } : {}), message: e.message }));
+	if (v.violated) out.violated = v.violated;
+	if (v.trace?.length) out.counterexample = v.trace.map((s) => `${s.index}: ${s.action}${s.vars.length ? ` — ${s.vars.map((x) => `${x.name} = ${x.value}`).join(", ")}` : ""}`);
+	if (v.unreachable?.length) out.unreachable = v.unreachable;
+	if (v.passed) {
+		out.review =
+			context === "exercise"
+				? "TLC passes. Judge whether this solution does what the task asked, not only whether it passes the checks; record your judgment with tla_review before replying."
+				: "TLC passes. Judge whether this solution does what the problem asked, not only whether it passes the checks, before you count it as solved.";
 	}
 	return out;
 }

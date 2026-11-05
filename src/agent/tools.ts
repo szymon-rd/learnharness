@@ -26,6 +26,8 @@ import { grepTool } from "./tools/grep.ts";
 import { healToolRecord } from "./tools/heal.ts";
 import { leanExerciseToolFor } from "./tools/lean.ts";
 import type { LeanChecker } from "../core/lean-cell.ts";
+import { tlaExerciseToolFor, tlaReviewToolFor } from "./tools/tla.ts";
+import type { TlaChecker } from "../core/tla-cell.ts";
 import type { GraphStore } from "../core/ports.ts";
 
 export { jobTools };
@@ -407,6 +409,10 @@ export interface TeacherToolContext extends PlanToolContext {
 	 *  service). Present = lean_exercise is registered and plan_init gains
 	 *  its codeCells mark. */
 	lean?: LeanChecker;
+	/** TLA+ code cells (owner, 2026-11-05): the same gate with the TLA+
+	 *  service. Present = tla_exercise and tla_review are registered and
+	 *  plan_init's codeCells offers "tla". */
+	tla?: TlaChecker;
 }
 
 /**
@@ -464,9 +470,15 @@ export function createTeacherTools(
 			ls: lsTool,
 			find: findTool,
 			grep: grepTool,
-			...planTools(ctx, { codeCells: ctx.lean !== undefined }),
+			...planTools(ctx, { codeCells: [...(ctx.lean ? (["lean"] as const) : []), ...(ctx.tla ? (["tla"] as const) : [])] }),
 			...(ctx.lean
 				? { lean_exercise: leanExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, lean: ctx.lean }, (nodeId) => nodeIdProblem(ctx, nodeId)) }
+				: {}),
+			...(ctx.tla
+				? {
+						tla_exercise: tlaExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, tla: ctx.tla }, (nodeId) => nodeIdProblem(ctx, nodeId)),
+						tla_review: tlaReviewToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore }),
+					}
 				: {}),
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),
 		},

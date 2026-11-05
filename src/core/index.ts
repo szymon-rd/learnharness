@@ -85,3 +85,6 @@ export * from "./session-markdown.ts";
 // editor's input abbreviations. Pure, browser-safe.
 export * from "./lean-cell.ts";
 export * from "./lean-abbreviations.ts";
+// TLA+ code cells (owner, 2026-11-05): the cell layout, the TLC model and
+// the verdict. Pure, browser-safe.
+export * from "./tla-cell.ts";

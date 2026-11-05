@@ -31,10 +31,21 @@ export interface PlanTree {
 	edges: PlanEdge[];
 	/** Increments on every mutation — lets the UI animate/react to changes. */
 	version: number;
-	/** The session is about Lean (owner, 2026-10-30): plan_init's
-	 *  codeCells mark. Only then may the teacher pose Lean code cells; the
-	 *  plan window shows it. Absent = not a Lean topic. */
-	codeCells?: boolean;
+	/** The code-cell language of the session (owner, 2026-10-30; TLA+
+	 *  2026-11-05): plan_init's codeCells mark. Only then may the teacher pose
+	 *  code cells, and only in that language. `true` is the pre-TLA+ form of
+	 *  "lean" (read it through planCodeCells). Absent = no code cells. */
+	codeCells?: CodeCellLanguage | true;
+}
+
+export type CodeCellLanguage = "lean" | "tla";
+
+/** The plan's code-cell language, reading the old boolean mark as Lean. */
+export function planCodeCells(tree: Pick<PlanTree, "codeCells"> | null | undefined): CodeCellLanguage | null {
+	const mark = tree?.codeCells;
+	if (mark === true || mark === "lean") return "lean";
+	if (mark === "tla") return "tla";
+	return null;
 }
 
 // NOTE (2026-09-11 pivot, docs/probe-teach-split.md): the tree once carried
@@ -91,7 +102,7 @@ export function derivePlanStatuses(tree: PlanTree, messages: readonly PartsCarri
 		for (const part of m.parts) {
 			// Either quizzing tool (quiz/explain) tags position — the mechanic
 			// is a settings switch; the fold recognizes both (owner 2026-09-27).
-			if (part.type !== "tool-quiz" && part.type !== "tool-explain" && part.type !== "tool-lean_exercise") continue;
+			if (part.type !== "tool-quiz" && part.type !== "tool-explain" && part.type !== "tool-lean_exercise" && part.type !== "tool-tla_exercise") continue;
 			const nodeId = (part.input as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue; // untagged/unknown — moves nothing
 			if (runs.at(-1) !== nodeId) runs.push(nodeId);
@@ -141,7 +152,7 @@ export function derivePlanStatusesLh(tree: PlanTree, messages: readonly LhMessag
 		const content = (m as { content?: unknown }).content;
 		if (!Array.isArray(content)) continue;
 		for (const block of content as Array<{ type?: string; name?: string; arguments?: unknown }>) {
-			if (block.type !== "toolCall" || (block.name !== "quiz" && block.name !== "explain" && block.name !== "lean_exercise")) continue;
+			if (block.type !== "toolCall" || (block.name !== "quiz" && block.name !== "explain" && block.name !== "lean_exercise" && block.name !== "tla_exercise")) continue;
 			const nodeId = (block.arguments as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue;
 			if (runs.at(-1) !== nodeId) runs.push(nodeId);

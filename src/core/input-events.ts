@@ -54,7 +54,17 @@ export type ChatInput =
 	 *  thinking on the ACTIVE problem — one lane (owner 2026-10-05):
 	 *  whether it claims an answer is read from the text. One
 	 *  problem may carry many submissions; each is its own turn. */
-	| { type: "thinking"; problemCallId: string; text: string; proof?: string; lean?: import("./native-messages.ts").PracticeLeanSubmission }
+	| {
+			type: "thinking";
+			problemCallId: string;
+			text: string;
+			proof?: string;
+			lean?: import("./native-messages.ts").PracticeLeanSubmission;
+			/** A TLA+ problem's submission (owner, 2026-11-05): the solution;
+			 *  `tla` (with the verdict) is set by the server, never the client. */
+			solution?: string;
+			tla?: import("./native-messages.ts").PracticeTlaSubmission;
+	  }
 	/** The practice move-on signal (owner round 16): the learner's
 	 *  explicit go-ahead during the between-problems pause — the Next
 	 *  chip or Enter on an empty composer. Practice sessions only, and
@@ -184,12 +194,21 @@ export function parseChatInput(input: unknown): ChatInput {
 			if (i.proof !== undefined && typeof i.proof !== "string") {
 				throw new ChatInputError("thinking input's proof must be a string");
 			}
-			// A Lean problem's submission may carry only the proof (owner,
-			// 2026-10-30); otherwise the thinking text is required.
-			if (typeof i.text !== "string" || (i.text.trim().length === 0 && typeof i.proof !== "string")) {
+			if (i.solution !== undefined && typeof i.solution !== "string") {
+				throw new ChatInputError("thinking input's solution must be a string");
+			}
+			// A Lean (or TLA+) problem's submission may carry only the proof
+			// (solution) (owner, 2026-10-30); otherwise the thinking text is required.
+			if (typeof i.text !== "string" || (i.text.trim().length === 0 && typeof i.proof !== "string" && typeof i.solution !== "string")) {
 				throw new ChatInputError("thinking input requires non-empty text");
 			}
-			return { type: "thinking", problemCallId: i.problemCallId, text: i.text, ...(typeof i.proof === "string" ? { proof: i.proof } : {}) };
+			return {
+				type: "thinking",
+				problemCallId: i.problemCallId,
+				text: i.text,
+				...(typeof i.proof === "string" ? { proof: i.proof } : {}),
+				...(typeof i.solution === "string" ? { solution: i.solution } : {}),
+			};
 		case "next":
 			return { type: "next" };
 		default:
@@ -234,7 +253,8 @@ export function inputAppends(
 			// The proof's verdict (input.lean) is set by the server (chat-handler)
 			// before this runs; a client-sent `lean` never reaches here.
 			const lean = input.proof !== undefined ? (input.lean ?? { proof: input.proof }) : undefined;
-			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, lean)];
+			const tla = input.solution !== undefined ? (input.tla ?? { solution: input.solution }) : undefined;
+			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, lean, tla)];
 		}
 		case "next": {
 			// Honest 400s, the thinking gate's discipline: the signal is a

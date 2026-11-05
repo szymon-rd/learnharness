@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { serverExecute } from "../tool-execute.ts";
-import type { PlanToolResult, PlanTree } from "../../core/contracts.ts";
+import type { CodeCellLanguage, PlanToolResult, PlanTree } from "../../core/contracts.ts";
 import type { ChatStore } from "../../core/ports.ts";
 import { createTree, PlanTreeError } from "../../core/plan-tree.ts";
 import { parseMermaidPlan } from "./mermaid-plan.ts";
@@ -59,23 +59,34 @@ const planInitInput = Type.Object({
 	}),
 });
 
-/** plan_init with the Lean-topic mark (owner, 2026-10-30): present only
- *  while the teacher holds lean_exercise, so the field never appears to a
- *  teacher that cannot pose code cells. */
-const planInitInputWithCodeCells = Type.Object({
-	mermaid: planInitInput.properties.mermaid,
-	codeCells: Type.Optional(
-		Type.Boolean({
-			description:
-				"true when this session is about Lean itself — writing Lean programs or proving theorems in Lean — so Lean " +
-				"code cells (lean_exercise) belong in it. Leave it out for everything else, including maths, physics or logic " +
-				"taught without Lean.",
-		}),
-	),
-});
+/** plan_init with the code-cell mark (owner, 2026-10-30; TLA+ 2026-11-05):
+ *  present only while the teacher holds a code-cell tool, and listing only
+ *  the languages whose service is up, so the field never offers a cell the
+ *  teacher cannot pose. */
+function planInitInputWithCodeCells(languages: readonly CodeCellLanguage[]) {
+	const what: Record<CodeCellLanguage, string> = {
+		lean: '"lean" when this session is about Lean itself — writing Lean programs or proving theorems in Lean (lean_exercise)',
+		tla: '"tla" when this session is about TLA+ or PlusCal itself — writing specifications and model checking them with TLC (tla_exercise)',
+	};
+	return Type.Object({
+		mermaid: planInitInput.properties.mermaid,
+		codeCells: Type.Optional(
+			Type.Union(
+				languages.map((l) => Type.Literal(l)),
+				{
+					description:
+						`The code-cell language of this session: ${languages.map((l) => what[l]).join("; ")}. Code cells of that language ` +
+						"then belong in it. Leave it out for everything else, including maths, physics, logic or concurrency taught " +
+						"without the language itself.",
+				},
+			),
+		),
+	});
+}
 
-export function planTools(ctx: PlanToolContext, options: { codeCells?: boolean } = {}): Record<string, AgentTool<any>> {
-	const parameters = options.codeCells ? planInitInputWithCodeCells : planInitInput;
+export function planTools(ctx: PlanToolContext, options: { codeCells?: readonly CodeCellLanguage[] } = {}): Record<string, AgentTool<any>> {
+	const languages = options.codeCells ?? [];
+	const parameters = languages.length ? planInitInputWithCodeCells(languages) : planInitInput;
 	return {
 		plan_init: {
 			name: "plan_init",
@@ -87,7 +98,7 @@ export function planTools(ctx: PlanToolContext, options: { codeCells?: boolean }
 				"`-->` edges meaning 'from must be understood before to' (chains fine). 5–15 nodes: a map, not a syllabus — one reasoning step per node, compress. " +
 				"Every check you fire names the node it assesses via `nodeId`; where the lesson stands derives from those tags.",
 			parameters,
-			execute: serverExecute("plan_init", parameters, async (input: { mermaid: string; codeCells?: boolean }) => {
+			execute: serverExecute("plan_init", parameters, async (input: { mermaid: string; codeCells?: CodeCellLanguage }) => {
 				const { mermaid } = input;
 				const { chatId, chatStore } = ctx;
 				const record = chatStore.getChat(chatId);
@@ -104,7 +115,7 @@ export function planTools(ctx: PlanToolContext, options: { codeCells?: boolean }
 					// createTree validates the structure (duplicate ids, missing
 					// edge endpoints, self-loops, cycles → PlanTreeError).
 					const next = createTree(parsed.plan.nodes, parsed.plan.edges);
-					if (options.codeCells && input.codeCells === true) next.codeCells = true;
+					if (input.codeCells && languages.includes(input.codeCells)) next.codeCells = input.codeCells;
 					chatStore.saveTree(chatId, next);
 					// Context diet: content = the validated nodeIds + the reminder (the
 				// ids just became binding for every quiz/explain call); details =
@@ -114,7 +125,7 @@ export function planTools(ctx: PlanToolContext, options: { codeCells?: boolean }
 						text: JSON.stringify({
 							ok: true,
 							nodeIds: next.nodes.map((n) => n.id),
-							...(options.codeCells ? { codeCells: next.codeCells === true } : {}),
+							...(languages.length ? { codeCells: next.codeCells ?? null } : {}),
 							reminder: PLAN_NODE_IDS_REMINDER,
 						}),
 						details: { ok: true, tree: next },

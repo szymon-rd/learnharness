@@ -399,6 +399,7 @@ function teacher(context, call) {
 	const handoffAt = msgs.findLastIndex((m) => m.role === "user" && textOf(m).startsWith(HANDOFF));
 	const teach = msgs.slice(handoffAt + 1);
 	if (tools.has("lean_exercise") && aboutLean(msgs)) return leanTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
+	if (tools.has("tla_exercise") && aboutTla(msgs)) return tlaTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
 	const calls = toolCallsOf(teach);
 	const done = (name) => calls.some((c) => c.name === name && resultFor(teach, c.id) && !resultFor(teach, c.id).isError);
 	const questions = calls.filter((c) => ["quiz", "explain", "ask_user_question"].includes(c.name));
@@ -473,6 +474,7 @@ const PROBLEMS = [
 function practice(context, call) {
 	const msgs = conversation(context);
 	if (toolDeclaration(context, "problem").includes('"lean"') && aboutLean(msgs)) return leanPractice(context, call, msgs);
+	if (toolDeclaration(context, "problem").includes('"tla"') && aboutTla(msgs)) return tlaPractice(context, call, msgs);
 	const calls = toolCallsOf(msgs);
 	const posed = calls.filter((c) => c.name === "problem" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
 	const concluded = calls.filter((c) => c.name === "conclude" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
@@ -674,7 +676,7 @@ function leanTeacher(context, call, msgs, teach, ack) {
 	if (!calls.some((c) => c.name === "plan_init" && ok(c))) {
 		return reply([
 			fauxText(`${ack}Here's the route: arithmetic on ℕ, then tactic proofs, then Mathlib's automation. You'll write the proofs yourself in Lean cells.`),
-			call("plan_init", { mermaid: LEAN_PLAN, codeCells: true }),
+			call("plan_init", { mermaid: LEAN_PLAN, codeCells: "lean" }),
 		]);
 	}
 	const lean = calls.filter((c) => c.name === "lean_exercise");
@@ -735,6 +737,155 @@ function leanPractice(context, call, msgs) {
 		return reply([fauxText(posed.length === 0 ? "A Lean one to start." : "Another Lean one."), call("problem", { ...LEAN_PROBLEM, ...target })]);
 	}
 	return reply([fauxText(active ? "Edit the proof and submit when Lean accepts it." : "Press **Next problem** to continue.")]);
+}
+
+// ─── TLA+ code cells (tests/e2e/tla-qa.e2e.mjs) ────────────────────────────
+//
+// Only when code cells are on (the tools carry tla_exercise / the problem
+// tool's tla block) AND the learner's topic mentions TLA+.
+
+function aboutTla(msgs) {
+	return msgs.some((m) => m.role === "user" && /\bTLA\+/.test(textOf(m)) && !textOf(m).startsWith("[Session context]"));
+}
+
+const TLA_PLAN = ["graph TD", "  states[States and actions] --> invariants[Invariants]", "  invariants --> pluscal[PlusCal algorithms]"].join("\n");
+
+const TLA_EX1 = {
+	nodeId: "states",
+	question: "Write `Init` and `Next` so that `x` starts at 0 and counts up by one **until it reaches `N`**, then stops. TLC checks `TypeOK`, and `x = N` must be reachable.",
+	head: "---- MODULE QaCounter ----\nEXTENDS Naturals\nCONSTANT N\nVARIABLE x",
+	starter: "Init == x = 0\nNext == x' = x + 1",
+	tail: "TypeOK == x \\in 0..N\n====",
+	config: { constants: { N: "3" }, init: "Init", next: "Next", invariants: ["TypeOK"], checkDeadlock: false },
+	witnesses: [{ label: "x reaches N", expression: "x = N" }],
+	referenceSolution: "Init == x = 0\nNext == x < N /\\ x' = x + 1",
+};
+
+const TLA_EX2 = {
+	nodeId: "pluscal",
+	question: "Two processes share a critical section (label `cs:`). Using the `lock` variable, write each process's steps so that it **enters the critical section and leaves it**, and the two are never in it at once (`Mutex`).",
+	mode: "pluscal",
+	head: "---- MODULE QaMutex ----\nEXTENDS Naturals\n(* --algorithm QaMutex\nvariables lock = FALSE;\nprocess proc \\in 1..2\nbegin",
+	starter: "  start:\n    skip;",
+	tail: "end process;\nend algorithm; *)\n\nMutex == ~(pc[1] = \"cs\" /\\ pc[2] = \"cs\")\n====",
+	config: { specification: "Spec", invariants: ["Mutex"] },
+	referenceSolution: "  acquire:\n    await ~lock;\n    lock := TRUE;\n  cs:\n    lock := FALSE;",
+};
+
+const TLA_QUIZ = {
+	type: "check",
+	nodeId: "invariants",
+	question: "What does TLC report when an invariant fails?",
+	options: [
+		{ label: "A behavior that reaches a state violating it", value: "trace" },
+		{ label: "Only the name of the invariant", value: "name" },
+		{ label: "A proof that the invariant is false in every state", value: "proof" },
+	],
+	explanation: "TLC prints a counterexample: the shortest behavior from an initial state to a state where the invariant is false.",
+	correctAnswer: "trace",
+};
+
+function tlaAnswer(msgs, c) {
+	return parseJson(textOf(resultFor(msgs, c.id) ?? {})) ?? {};
+}
+
+function tlaVerdict(msgs, c, reviews) {
+	const a = tlaAnswer(msgs, c);
+	if (a.dismissed) return "Skipped — fine.";
+	const review = reviews.find((r) => r.arguments.exerciseCallId === c.id);
+	if (a.correct === true && review && review.arguments.accepted === false) return `TLC passes, but that is not what was asked: ${review.arguments.reason}`;
+	if (a.correct === true) return "TLC finds no error, and it does what was asked — well done.";
+	return `TLC did not accept that (${a.verdict ?? "it reports errors"}). Look at the card; we'll come back to it.`;
+}
+
+function tlaTeacher(context, call, msgs, teach, ack) {
+	const calls = toolCallsOf(teach);
+	const ok = (c) => resultFor(teach, c.id) && !resultFor(teach, c.id).isError;
+	if (!calls.some((c) => c.name === "plan_init" && ok(c))) {
+		return reply([
+			fauxText(`${ack}Here's the route: states and actions, then invariants, then PlusCal. You'll write the specs yourself in TLA+ cells and check them with TLC.`),
+			call("plan_init", { mermaid: TLA_PLAN, codeCells: "tla" }),
+		]);
+	}
+	const ex = calls.filter((c) => c.name === "tla_exercise");
+	const reviews = calls.filter((c) => c.name === "tla_review" && ok(c));
+	const quiz = calls.filter((c) => c.name === "quiz");
+	// A TLC pass is judged first: does it do what was asked?
+	for (const c of ex.filter(ok)) {
+		const a = tlaAnswer(teach, c);
+		if (a.correct !== true || !a.review || reviews.some((r) => r.arguments.exerciseCallId === c.id)) continue;
+		const mutex = c.arguments.head?.includes("QaMutex");
+		const accepted = !mutex || /\bcs:/.test(a.solution ?? "");
+		return reply([
+			call("tla_review", {
+				exerciseCallId: c.id,
+				accepted,
+				reason: accepted ? "It models the behavior the task describes." : "It never enters the critical section, so Mutex holds trivially. Write the acquire, cs and release steps.",
+			}),
+		]);
+	}
+	if (ex.length === 0) {
+		return reply([fauxText(`${ack}## A spec is a state machine\n\n\`Init\` says which states a behavior may start in; \`Next\` relates each state to the next (primed variables are the next state). TLC explores every reachable state and checks the invariants in each.\n\nYour turn:`), call("tla_exercise", TLA_EX1)]);
+	}
+	if (ex.length === 1 && ok(ex[0])) {
+		// Deliberately a second code cell in a row: the tool must refuse it.
+		return reply([fauxText(`${ack}${tlaVerdict(teach, ex[0], reviews)}\n\nAnother one:`), call("tla_exercise", TLA_EX2)]);
+	}
+	if (ex.length === 2 && resultFor(teach, ex[1].id)?.isError && quiz.length === 0) {
+		return reply([fauxText("Let's mix in a quick check before the next spec."), call("quiz", TLA_QUIZ)]);
+	}
+	if (quiz.length === 1 && ok(quiz[0]) && ex.length === 2) {
+		return reply([fauxText(`${ack}${verdictLine(teach, quiz[0])}\n\nNow in PlusCal:`), call("tla_exercise", TLA_EX2)]);
+	}
+	if (ex.length === 3 && ok(ex[2])) {
+		return reply([fauxText(`${ack}${tlaVerdict(teach, ex[2], reviews)}\n\n## Summary\n\n- A spec is \`Init\` plus \`Next\`; TLC explores every reachable state.\n- An invariant violation comes with the behavior that reaches it.\n- Passing the checks is not the same as doing what was asked: say what must be reachable.`)]);
+	}
+	return reply([fauxText(ack.trim() || "Noted.")]);
+}
+
+const TLA_PROBLEM = {
+	statement: "Write `Init` and `Next` so that `x` starts at `N` and counts **down** to 0, then stops.",
+	mode: "recall",
+	modelSolution: "Init == x = N; Next == x > 0 /\\ x' = x - 1.",
+	tla: {
+		head: "---- MODULE QaDown ----\nEXTENDS Naturals\nCONSTANT N\nVARIABLE x",
+		starter: "Init == x = N\nNext == x' = x - 1",
+		tail: "TypeOK == x \\in 0..N\n====",
+		config: { constants: { N: "3" }, init: "Init", next: "Next", invariants: ["TypeOK"], checkDeadlock: false },
+		witnesses: [{ label: "x reaches 0", expression: "x = 0" }],
+		referenceSolution: "Init == x = N\nNext == x > 0 /\\ x' = x - 1",
+	},
+};
+
+function tlaPractice(context, call, msgs) {
+	const ids = [...msgs.map((m) => textOf(m)).join("\n").matchAll(/\[(n_[a-z0-9]+)\]/g)].map((m) => m[1]);
+	const calls = toolCallsOf(msgs);
+	const problems = calls.filter((c) => c.name === "problem");
+	const posed = problems.filter((c) => resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
+	const concluded = calls.filter((c) => c.name === "conclude" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
+	const active = posed.length > concluded.length;
+	const last = msgs.at(-1);
+	const tailText = trailing(msgs).map((m) => textOf(m)).join("\n");
+	const target = ids.length ? { target: [ids[0]] } : {};
+	if (last?.role === "toolResult" && last.toolName === "conclude") {
+		return reply([fauxText("That's the committed solution above. Press **Next problem** when you're ready.")]);
+	}
+	if (last?.role === "toolResult" && last.toolName === "problem" && last.isError) {
+		return reply([fauxText("A plain one in between, then."), call("problem", { ...PROBLEMS[0], ...target })]);
+	}
+	if (active && tailText.includes(THINKING)) {
+		if (/TLC verdict: passes/.test(tailText)) {
+			return reply([call("conclude", { outcome: "solved", verdict: "TLC finds no error and it counts down as asked.", rung: null, missClass: null, retest: false })]);
+		}
+		if (/TLC verdict: does not pass/.test(tailText)) {
+			return reply([fauxText("TLC still finds a problem — read the counterexample in your submission card. Hint: what should stop the count at 0?")]);
+		}
+		return reply([call("conclude", { outcome: "movedOn", verdict: "Read your trace.", rung: null, missClass: null, retest: false })]);
+	}
+	if (!active && (posed.length === 0 || tailText.includes(NEXT_PROBLEM))) {
+		return reply([fauxText(posed.length === 0 ? "A TLA+ one to start." : "Another TLA+ one."), call("problem", { ...TLA_PROBLEM, ...target })]);
+	}
+	return reply([fauxText(active ? "Edit the spec, use Check, and submit when TLC accepts it." : "Press **Next problem** to continue.")]);
 }
 
 function unknownRole(context) {

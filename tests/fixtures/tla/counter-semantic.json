@@ -1,0 +1,39 @@
+{
+ "exercise": {
+  "question": "q",
+  "head": "---- MODULE Counter ----\nEXTENDS Naturals\nCONSTANT N\nVARIABLE x",
+  "tail": "Spec == Init /\\ [][Next]_x /\\ WF_x(Next)\nTypeOK == x \\in 0..N\nReachesN == <>(x = N)\n====",
+  "config": {
+   "constants": {
+    "N": "3"
+   },
+   "init": "Init",
+   "next": "Next",
+   "invariants": [
+    "TypeOK"
+   ],
+   "checkDeadlock": false
+  },
+  "witnesses": [
+   {
+    "label": "x reaches N",
+    "expression": "x = N"
+   },
+   {
+    "label": "x is 2",
+    "expression": "x = 2"
+   }
+  ]
+ },
+ "solution": "Init == x = 0\nNext == x' = y",
+ "kind": "parse",
+ "result": {
+  "ms": 200,
+  "moduleName": "Counter",
+  "sany": {
+   "ok": false,
+   "timedOut": false,
+   "output": "\n****** SANY2 Version 2.1 created 24 February 2014\n\nParsing file /tmp/tla-X/Counter.tla\nParsing file /tmp/Naturals.tla\nSemantic processing of module Naturals\nSemantic processing of module Counter\nSemantic errors:\n\n*** Errors: 1\n\nline 7, col 14 to line 7, col 14 of module Counter\n\nUnknown operator: `y'.\n\n\n\n"
+  }
+ }
+}

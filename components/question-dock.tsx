@@ -40,6 +40,7 @@ import {
 } from "@/src/core";
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
 import { LeanDockForm, parseLeanExerciseInput } from "@/components/lean/lean-dock";
+import { parseTlaExerciseInput, TlaDockForm } from "@/components/tla/tla-dock";
 
 /**
  * The question dock — a pending quiz/ask REPLACES the chat composer: the
@@ -62,8 +63,10 @@ import { LeanDockForm, parseLeanExerciseInput } from "@/components/lean/lean-doc
  */
 
 export interface QuestionDockProps {
-	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise";
+	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise";
 	toolCallId: string;
+	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
+	chatId?: string;
 	input: QuizToolInput | AskToolInput | ExplainToolInput;
 	/** Collapse state, owned by the DockOverlay (it drives the shell's height morph). */
 	expanded: boolean;
@@ -103,6 +106,7 @@ export interface QuestionDockProps {
 export function QuestionDock({
 	toolName,
 	toolCallId,
+	chatId = "",
 	input,
 	expanded,
 	reveal = false,
@@ -143,6 +147,35 @@ export function QuestionDock({
 					<LeanDockForm
 						toolCallId={toolCallId}
 						input={lean}
+						onSubmit={onSubmit}
+						initialDraft={initialDraft}
+						onSaveDraft={onSaveDraft}
+						onEscape={onEscape}
+						dictationClaim={dictationClaim}
+						compactionRunning={compactionRunning}
+					/>
+				</div>
+			</>
+		);
+	}
+	// TLA+ code cells (owner, 2026-11-05): the same shape with the TLA+ cell.
+	if (toolName === "tla_exercise") {
+		const tla = parseTlaExerciseInput(input);
+		if (!tla) {
+			return (
+				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
+					This exercise arrived malformed — the transcript keeps the retry.
+				</div>
+			);
+		}
+		return (
+			<>
+				{!expanded && <QuestionDockBar toolName="tla_exercise" question={tla.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="TLA+" />}
+				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
+					<TlaDockForm
+						chatId={chatId}
+						toolCallId={toolCallId}
+						exercise={tla}
 						onSubmit={onSubmit}
 						initialDraft={initialDraft}
 						onSaveDraft={onSaveDraft}
@@ -230,7 +263,7 @@ export function QuestionDockBar({
 	label,
 	toolLabel,
 }: {
-	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise";
+	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise" | "tla_exercise";
 	question: string;
 	onExpand: () => void;
 	variant?: "collapsed" | "reveal";

@@ -1,5 +1,5 @@
 # LearnHarness on your own server: the app, Caddy for automatic HTTPS, and
-# Lean + Mathlib for code cells.
+# Lean + Mathlib and the TLA+ tools for code cells.
 #   cp .env.example .env    # set LH_HOST
 #   docker compose up -d --build
 # See docs/deploy-vps.md.
@@ -12,11 +12,12 @@ services:
     environment:
       LH_PUBLIC_URL: https://${LH_HOST:?Set LH_HOST in deploy/.env (see .env.example)}
       LH_LEAN_URL: http://lean:3300
+      LH_TLA_URL: http://tla:3400
     volumes:
       - learnharness-data:/data
     # Chromium (interactive demos) needs more shared memory than Docker's 64 MB default.
     shm_size: 1gb
-    networks: [default, lean]
+    networks: [default, lean, tla]
 
   # Lean 4 + Mathlib for code cells (deploy/lean). No internet access (the
   # "lean" network is internal), an unprivileged user, no capabilities and a
@@ -35,6 +36,28 @@ services:
       - /tmp:size=256m
     mem_limit: ${LEAN_MEM_LIMIT:-3g}
     pids_limit: 512
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  # The TLA+ tools for code cells (deploy/tla): SANY, TLC and the PlusCal
+  # translator behind a small bridge. Same isolation as Lean: no internet
+  # (the "tla" network is internal), an unprivileged user, no capabilities,
+  # a read-only filesystem except /tmp, and a memory cap. Only the app talks
+  # to it (Caddy does not route it).
+  tla:
+    image: learnharness-tla:${TLA_TAG:-local}
+    build: ./tla
+    restart: unless-stopped
+    environment:
+      # TLC's time budget per check (all runs: the model and the witnesses).
+      TLA_CHECK_TIMEOUT_SECONDS: ${TLA_CHECK_TIMEOUT_SECONDS:-60}
+      TLA_TLC_HEAP: ${TLA_TLC_HEAP:-640m}
+    networks: [tla]
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    mem_limit: ${TLA_MEM_LIMIT:-1g}
+    pids_limit: 256
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
@@ -58,6 +81,8 @@ services:
 networks:
   default:
   lean:
+    internal: true
+  tla:
     internal: true
 
 volumes:

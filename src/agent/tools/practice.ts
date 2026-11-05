@@ -36,6 +36,8 @@ import {
 	verdictSummary,
 	type LeanChecker,
 } from "../../core/lean-cell.ts";
+import { checkTlaSolution, resolveTlaExercise, tlaExerciseProblems, type TlaChecker } from "../../core/tla-cell.ts";
+import { referenceProblems, tlaExerciseFields } from "./tla.ts";
 
 
 /** The record-reading context the gates need (the plan-tools idiom). */
@@ -59,6 +61,10 @@ export interface PracticeToolContext {
 	 *  whose plan was marked as a Lean topic — the practice session's
 	 *  material decides, since practice has no plan of its own. */
 	lean?: { check: LeanChecker; leanSourced: (propositionIds: string[]) => boolean };
+	/** TLA+ problems (owner, 2026-11-05): the same rule — the code-cells gate
+	 *  with the TLA+ service, and material from a teaching session whose plan
+	 *  was marked as a TLA+ topic. */
+	tla?: { check: TlaChecker; tlaSourced: (propositionIds: string[]) => boolean };
 }
 
 /** TURN-SCOPED GATE STATE (the BKT incident, 2026-10-05): the gates used
@@ -134,6 +140,32 @@ export const problemInputWithLean = Type.Object({
 
 type LeanBlock = Static<typeof problemLeanBlock>;
 
+/** The TLA+ block of a problem (owner, 2026-11-05): the learner writes the
+ *  editable part of a TLA+ or PlusCal module in a TLA+ cell; each
+ *  submission carries the solution and TLC's verdict. */
+const problemTlaBlock = Type.Object({
+	...tlaExerciseFields,
+	learnerAsked: Type.Optional(Type.Boolean({ description: "True only when the learner asked for another code problem right after one." })),
+});
+
+const tlaProblemDescription =
+	"Make this a TLA+ problem: the learner writes the part between the locked head and tail of a TLA+ (or PlusCal) module in " +
+	"a code cell, with live SANY errors and a Check button; each submission brings their solution and TLC's verdict (with any " +
+	"counterexample). On a TLC pass, judge whether it does what the problem asked before counting it solved. Only for material " +
+	"from TLA+ sessions; never two code problems (Lean or TLA+) in a row unless they asked (learnerAsked).";
+
+type TlaBlock = Static<typeof problemTlaBlock>;
+
+/** The problem schema for the code-cell languages this turn may pose. */
+function problemSchemaFor(withLean: boolean, withTla: boolean) {
+	if (!withLean && !withTla) return problemInputObject;
+	return Type.Object({
+		...problemInputObject.properties,
+		...(withLean ? { lean: problemInputWithLean.properties.lean } : {}),
+		...(withTla ? { tla: Type.Optional(Type.Object(problemTlaBlock.properties, { description: tlaProblemDescription })) } : {}),
+	});
+}
+
 /** Proposition ids the session was started from (the graph-context picks). */
 function sessionPickIds(messages: readonly LhMessage[]): string[] {
 	const ids: string[] = [];
@@ -145,14 +177,17 @@ function sessionPickIds(messages: readonly LhMessage[]): string[] {
 	return ids;
 }
 
-/** Was the newest problem posed before this one a Lean problem? */
-function previousProblemWasLean(messages: readonly LhMessage[], toolCallId: string): boolean {
+/** Was the newest problem posed before this one a code problem (Lean or
+ *  TLA+)? "Never two in a row" counts both languages together. */
+function previousProblemWasCode(messages: readonly LhMessage[], toolCallId: string): boolean {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const m = messages[i] as { role?: string; content?: unknown };
 		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
 		for (let j = m.content.length - 1; j >= 0; j--) {
-			const b = m.content[j] as { type?: string; id?: string; name?: string; arguments?: { lean?: unknown } };
-			if (b.type === "toolCall" && b.name === "problem" && b.id !== toolCallId) return b.arguments?.lean !== undefined && b.arguments.lean !== null;
+			const b = m.content[j] as { type?: string; id?: string; name?: string; arguments?: { lean?: unknown; tla?: unknown } };
+			if (b.type === "toolCall" && b.name === "problem" && b.id !== toolCallId) {
+				return (b.arguments?.lean !== undefined && b.arguments.lean !== null) || (b.arguments?.tla !== undefined && b.arguments.tla !== null);
+			}
 		}
 	}
 	return false;
@@ -171,8 +206,8 @@ async function leanProblemProblems(
 	if (!lean.leanSourced([...sessionPickIds(messages), ...targets])) {
 		problems.push("Lean problems are only for material from Lean sessions; none of this session's propositions came from one. Pose it without `lean`.");
 	}
-	if (previousProblemWasLean(messages, toolCallId) && block.learnerAsked !== true) {
-		problems.push("The previous problem was already a Lean problem. Mix them in: pose one without `lean` first, unless the learner asked for another (then set lean.learnerAsked: true).");
+	if (previousProblemWasCode(messages, toolCallId) && block.learnerAsked !== true) {
+		problems.push("The previous problem was already a code problem. Mix them in: pose one without `lean` first, unless the learner asked for another (then set lean.learnerAsked: true).");
 	}
 	if (problems.length) return problems;
 	try {
@@ -189,12 +224,40 @@ async function leanProblemProblems(
 	return [];
 }
 
+/** The TLA+ gates and the reference-solution check for one pose. */
+async function tlaProblemProblems(
+	ctx: PracticeToolContext,
+	toolCallId: string,
+	block: TlaBlock,
+	targets: string[],
+): Promise<string[]> {
+	const tla = ctx.tla!;
+	const messages = ctx.chatStore.getChat(ctx.chatId)?.messages ?? [];
+	const problems = tlaExerciseProblems({ question: "problem", ...block });
+	if (!tla.tlaSourced([...sessionPickIds(messages), ...targets])) {
+		problems.push("TLA+ problems are only for material from TLA+ sessions; none of this session's propositions came from one. Pose it without `tla`.");
+	}
+	if (previousProblemWasCode(messages, toolCallId) && block.learnerAsked !== true) {
+		problems.push("The previous problem was already a code problem. Mix them in: pose one without `tla` first, unless the learner asked for another (then set tla.learnerAsked: true).");
+	}
+	if (problems.length) return problems;
+	try {
+		const verdict = await checkTlaSolution(tla.check, resolveTlaExercise({ question: "", ...block }), block.referenceSolution);
+		if (!verdict.passed) return referenceProblems("tla.referenceSolution", verdict);
+	} catch (err) {
+		return [`The TLA+ checker is unavailable right now (${(err as Error).message}). Pose the problem without \`tla\`.`];
+	}
+	return [];
+}
+
 export function problemTool(
 	gate: PracticeGate,
 	graphNodes?: PracticeToolContext["graphNodes"],
 	ctx?: PracticeToolContext,
 ): AgentTool<typeof problemInputObject> {
 	const withLean = ctx?.lean !== undefined;
+	const withTla = ctx?.tla !== undefined;
+	const schema = problemSchemaFor(withLean, withTla);
 	return {
 		name: "problem",
 		label: "problem",
@@ -203,10 +266,10 @@ export function problemTool(
 			"traces and answer commits arrive back as labeled messages. The modelSolution rides this call's " +
 			"arguments and stays hidden from the learner until you conclude (conclude shows it verbatim — the " +
 			"reveal needs no new field). Only one problem may be active — conclude it before posing the next.",
-		parameters: (withLean ? problemInputWithLean : problemInputObject) as typeof problemInputObject,
+		parameters: schema as typeof problemInputObject,
 		executionMode: "sequential",
 		prepareArguments: (args: unknown) => {
-			const healed = healEncodedArguments(args, withLean ? problemInputWithLean : problemInputObject);
+			const healed = healEncodedArguments(args, schema);
 			// TARGET NORMALIZATION (owner round 9): names silently become ids —
 			// the RECORD carries canonical ids (the mastery trace groups on
 			// them); unresolvable strings pass through for execute to reject.
@@ -256,6 +319,13 @@ export function problemTool(
 				if (!withLean) return invalidInputResult("problem", ["Lean problems are off here (the Code cells setting or Lean is unavailable). Pose it without `lean`."]);
 				const leanProblems = await leanProblemProblems(ctx!, toolCallId, leanBlock, input.target ?? []);
 				if (leanProblems.length) return invalidInputResult("problem", leanProblems);
+			}
+			const tlaBlock = (input as { tla?: TlaBlock }).tla;
+			if (tlaBlock) {
+				if (leanBlock) return invalidInputResult("problem", ["A problem is either a Lean problem or a TLA+ problem, not both."]);
+				if (!withTla) return invalidInputResult("problem", ["TLA+ problems are off here (the Code cells setting or the TLA+ checker is unavailable). Pose it without `tla`."]);
+				const tlaProblems = await tlaProblemProblems(ctx!, toolCallId, tlaBlock, input.target ?? []);
+				if (tlaProblems.length) return invalidInputResult("problem", tlaProblems);
 			}
 			gate.problemActive = true;
 			return problemResult();

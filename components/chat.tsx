@@ -19,6 +19,9 @@ import { Shimmer } from "@/components/ai-elements/shimmer";
 import { BrailleSpinner } from "@/components/braille-spinner";
 import { LiveToolCard } from "@/components/artifacts/live-tool-card";
 import { LeanPreparingLine } from "@/components/lean/lean-preparing-line";
+import { TlaPreparingLine } from "@/components/tla/tla-preparing-line";
+import { collectTlaReviews, sameTlaReviews, TlaReviewsContext, type TlaReviewView } from "@/components/tla/tla-answered-card";
+import type { PracticeCodeSubmission } from "@/components/practice-dock";
 import { useIsPhone, useSoftKeyboardOpen } from "@/components/phone-layout";
 import { ThinkingChip } from "@/components/thinking-chip";
 import { Separator } from "@/components/ui/separator";
@@ -508,10 +511,16 @@ export function Chat({
 	// the dock stays mounted (the problem is still active until the agent
 	// concludes).
 	const submitThinking = useCallback(
-		(text: string, proof?: string) => {
+		(text: string, code?: PracticeCodeSubmission) => {
 			const problem = activeProblemRef.current;
 			if (!problem) return;
-			void send({ type: "thinking", problemCallId: problem.toolCallId, text, ...(proof !== undefined ? { proof } : {}) });
+			void send({
+				type: "thinking",
+				problemCallId: problem.toolCallId,
+				text,
+				...(code?.proof !== undefined ? { proof: code.proof } : {}),
+				...(code?.solution !== undefined ? { solution: code.solution } : {}),
+			});
 		},
 		[send],
 	);
@@ -1338,6 +1347,15 @@ export function Chat({
 		}),
 		[chatId, syncFromServer, send],
 	);
+	// The teacher's reviews of TLA+ answers (tla_review): the answered cards
+	// read theirs. Stable unless a review changes, so streaming does not
+	// re-render the cards.
+	const tlaReviewsRef = useRef<ReadonlyMap<string, TlaReviewView>>(new Map());
+	const tlaReviews = useMemo(() => {
+		const next = collectTlaReviews(messages as readonly { parts?: readonly unknown[] }[]);
+		if (!sameTlaReviews(next, tlaReviewsRef.current)) tlaReviewsRef.current = next;
+		return tlaReviewsRef.current;
+	}, [messages]);
 	const sessionMermaid = useMemo(
 		() => ({
 			openMermaid: setMermaidFocus,
@@ -1348,6 +1366,7 @@ export function Chat({
 
 	return (
 		<ChatActionsContext.Provider value={chatActions}>
+		<TlaReviewsContext.Provider value={tlaReviews}>
 		<SessionMermaidContext.Provider value={sessionMermaid}>
 		<JobsContext.Provider value={jobs}>
 		{/* The session surface: the transcript column (header + scroller) and
@@ -1698,6 +1717,7 @@ export function Chat({
 				// the learner sends it themselves.
 			}}
 		/>
+		</TlaReviewsContext.Provider>
 		</ChatActionsContext.Provider>
 	);
 }
@@ -2016,13 +2036,22 @@ const TranscriptRow = memo(function TranscriptRow({
 									case "tool-ask_user_question":
 									case "tool-explain":
 									case "tool-recall":
-									case "tool-lean_exercise": {
+									case "tool-lean_exercise":
+									case "tool-tla_exercise": {
 										// Pending/streaming questions live in the dock, not the
 										// transcript; answered ones render as graded records.
 										if (part.state === "output-available") {
 											return (
-												<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} />
+												<AnsweredCard
+													key={pi}
+													answer={part.output as QuestionAnswerData}
+													input={part.input}
+													toolCallId={(part as { toolCallId?: string }).toolCallId}
+												/>
 											);
+										}
+										if (part.type === "tool-tla_exercise" && part.state === "input-streaming") {
+											return <TlaPreparingLine key={pi} />;
 										}
 										// A Lean exercise stays input-streaming while its reference
 										// proof is checked; say so (and when Lean is still starting).
@@ -2096,7 +2125,7 @@ function DockOverlay({
 	 *  question (the composer is replaced); null in teaching sessions. */
 	practice: { toolCallId: string; input: unknown } | null;
 	/** (commit, text) — the practice dock's two submit lanes. */
-	onSubmitThinking: (text: string, proof?: string) => void;
+	onSubmitThinking: (text: string, code?: PracticeCodeSubmission) => void;
 	/** Teach-phase pending question: arrives collapsed behind the reveal button (W5). */
 	requiresReveal: boolean;
 	/** The reading-thinking draft (owner 2026-10-03) — owned by ChatView so
@@ -2531,8 +2560,9 @@ function DockOverlay({
 						>
 							{pending ? (
 								<QuestionDock
-									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise"}
+									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise"}
 									toolCallId={pending.toolCallId}
+									chatId={chatId}
 									input={pending.input as never}
 									expanded={expanded}
 									reveal={revealPending}
@@ -2548,7 +2578,8 @@ function DockOverlay({
 							) : practice ? (
 								<PracticeDock
 									problemCallId={practice.toolCallId}
-									input={practice.input as { statement: string; lean?: unknown }}
+									chatId={chatId}
+									input={practice.input as { statement: string; lean?: unknown; tla?: unknown }}
 									expanded={expanded}
 									onExpand={() => {
 										setExpanded(true);

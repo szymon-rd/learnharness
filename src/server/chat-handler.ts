@@ -46,6 +46,10 @@ import { registerTurn, rememberTurnFailure, unregisterTurn } from "./turn-runs.t
 import { persistTurn, triggerExtraction, TurnPersistenceError } from "./turn-service.ts";
 import { hasProbeDone, danglingQuestionOf, activeProblemOf } from "../core/native-messages.ts";
 import { LEAN_EXERCISE_TOOL } from "../core/lean-cell.ts";
+import { TLA_EXERCISE_TOOL } from "../core/tla-cell.ts";
+import { planCodeCells, type CodeCellLanguage } from "../core/contracts.ts";
+import { gradeTlaAnswer, gradeTlaSolution, TlaAnswerError } from "./tla-answer.ts";
+import { tlaChecker } from "./tla-service.ts";
 import { codeCellsEnabled } from "../core/settings-resolution.ts";
 import { gradeLeanAnswer, gradeLeanProof, LeanAnswerError } from "./lean-answer.ts";
 import { leanChecker } from "./lean-service.ts";
@@ -85,21 +89,25 @@ import type {CallUsage} from "../core/contracts.ts";
  */
 
 /** Did any of these propositions come up in a teaching session whose plan
- *  was marked as a Lean topic? (Practice sessions have no plan; their
- *  material decides whether Lean problems belong — owner, 2026-10-30.) */
-function leanSourcedPropositions(ids: string[]): boolean {
+ *  was marked with this code-cell language? (Practice sessions have no plan;
+ *  their material decides whether Lean or TLA+ problems belong — owner,
+ *  2026-10-30 / 2026-11-05.) */
+function codeSourcedPropositions(language: CodeCellLanguage, ids: string[]): boolean {
 	if (ids.length === 0) return false;
 	const wanted = new Set(ids);
 	const checked = new Map<string, boolean>();
 	for (const node of stores.graphStore.readNodes()) {
 		if (!wanted.has(node.id)) continue;
 		for (const point of node.provenance) {
-			if (!checked.has(point.chatId)) checked.set(point.chatId, stores.chatStore.getChat(point.chatId)?.tree?.codeCells === true);
+			if (!checked.has(point.chatId)) checked.set(point.chatId, planCodeCells(stores.chatStore.getChat(point.chatId)?.tree) === language);
 			if (checked.get(point.chatId)) return true;
 		}
 	}
 	return false;
 }
+
+const leanSourcedPropositions = (ids: string[]) => codeSourcedPropositions("lean", ids);
+const tlaSourcedPropositions = (ids: string[]) => codeSourcedPropositions("tla", ids);
 
 function settlementErrorText(error: unknown): string {
 	return error instanceof TurnPersistenceError ? error.message : "An error occurred.";
@@ -273,6 +281,17 @@ export async function handleChatInput(
 			}
 			record = stores.chatStore.getChat(chatId) ?? record;
 		}
+		// TLA+ code cells (owner, 2026-11-05): the same — only the solution
+		// comes from the client; TLC's verdict is computed from the persisted call.
+		if (pending?.toolCallId === input.toolCallId && pending.tool === TLA_EXERCISE_TOOL) {
+			try {
+				input = { ...input, answer: await gradeTlaAnswer(pending.input, input.answer, tlaChecker()) };
+			} catch (err) {
+				if (err instanceof TlaAnswerError) return Response.json({ error: err.message }, { status: err.status });
+				throw err;
+			}
+			record = stores.chatStore.getChat(chatId) ?? record;
+		}
 	}
 	// The practice twin: a submission on a Lean problem carries the proof;
 	// the verdict comes from the persisted problem call's exercise.
@@ -290,7 +309,25 @@ export async function handleChatInput(
 			record = stores.chatStore.getChat(chatId) ?? record;
 		} else {
 			// Not a Lean problem: the proof field means nothing here.
-			input = { type: "thinking", problemCallId: input.problemCallId, text: input.text };
+			input = { type: "thinking", problemCallId: input.problemCallId, text: input.text, ...(input.solution !== undefined ? { solution: input.solution } : {}) };
+		}
+	}
+	// TLA+ problems: the submission carries the solution; TLC's verdict comes
+	// from the persisted problem call's `tla` block.
+	if (input.type === "thinking" && input.solution !== undefined) {
+		const active = activeProblemOf(record.messages);
+		const exercise = active?.toolCallId === input.problemCallId ? (active.input as { tla?: unknown }).tla : undefined;
+		if (exercise) {
+			try {
+				const graded = await gradeTlaSolution(exercise, input.solution, tlaChecker());
+				input = { ...input, tla: { solution: input.solution, verdict: graded.verdict, summary: graded.summary } };
+			} catch (err) {
+				if (err instanceof TlaAnswerError) return Response.json({ error: err.message }, { status: err.status });
+				throw err;
+			}
+			record = stores.chatStore.getChat(chatId) ?? record;
+		} else {
+			input = { type: "thinking", problemCallId: input.problemCallId, text: input.text, ...(input.proof !== undefined ? { proof: input.proof } : {}) };
 		}
 	}
 
@@ -526,6 +563,11 @@ export async function handleChatInput(
 							const check = leanChecker();
 							return check && codeCellsEnabled(effective, true) ? { lean: { check, leanSourced: leanSourcedPropositions } } : {};
 						})(),
+						// TLA+ problems (owner, 2026-11-05): the same rule with the TLA+ service.
+						...(() => {
+							const check = tlaChecker();
+							return check && codeCellsEnabled(effective, true) ? { tla: { check, tlaSourced: tlaSourcedPropositions } } : {};
+						})(),
 					},
 					agentOpts,
 				)
@@ -543,6 +585,11 @@ export async function handleChatInput(
 						...(() => {
 							const lean = leanChecker();
 							return lean && codeCellsEnabled(effective, true) ? { lean } : {};
+						})(),
+						// TLA+ code cells: the same setting AND the TLA+ service.
+						...(() => {
+							const tla = tlaChecker();
+							return tla && codeCellsEnabled(effective, true) ? { tla } : {};
 						})(),
 					},
 					agentOpts,

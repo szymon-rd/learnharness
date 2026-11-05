@@ -563,7 +563,15 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 						</span>
 					</span>
 				</div>
-				<div ref={host} data-proof-line={layout.proofLine} />
+				{/* An Esc the editor used (closing the completion list) stops here:
+				    the window's Esc chain would otherwise also dismiss the question. */}
+				<div
+					ref={host}
+					data-proof-line={layout.proofLine}
+					onKeyDown={(e) => {
+						if (e.key === "Escape" && e.defaultPrevented) e.stopPropagation();
+					}}
+				/>
 			</div>
 			{/* Symbol bar (wider screens; phones keep only the header's Tab):
 			    mousedown keeps the editor's focus. */}

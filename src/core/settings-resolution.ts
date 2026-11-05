@@ -265,14 +265,14 @@ export function graphToolsEnabled(effective: {
 
 
 /**
- * The CODE CELLS gate (owner, 2026-10-30): the "Code cells" setting
- * ("Mixed in" = enabled; absent = Off) AND a configured Lean service.
- * Gates registration of the teacher's lean_exercise tool; the plan's own
- * Lean-topic mark is checked per call by the tool.
+ * The CODE CELLS gate (owner, 2026-10-30; TLA+ 2026-11-05): the "Code
+ * cells" setting ("Mixed in" = enabled; absent = Off) AND the language's
+ * service (Lean or TLA+). Gates registration of the teacher's lean_exercise
+ * / tla_exercise tools; the plan's own language mark is checked per call.
  */
 export function codeCellsEnabled(
 	effective: { agent: { codeCells: { enabled?: boolean } } },
-	leanServiceConfigured: boolean,
+	serviceConfigured: boolean,
 ): boolean {
-	return leanServiceConfigured && effective.agent.codeCells.enabled === true;
+	return serviceConfigured && effective.agent.codeCells.enabled === true;
 }

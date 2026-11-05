@@ -48,3 +48,5 @@ export { sessionCost } from "./pricing.ts";
 // Phone access (remote mode): the /pair route checks codes and mints the cookie.
 export { PAIR_PATH, REMOTE_COOKIE, accessCodeMatches, remoteAccessMode, remoteCookieValue } from "./remote-access.ts";
 export { leanServiceUrl, leanChecker } from "./lean-service.ts";
+export { tlaServiceUrl, tlaChecker } from "./tla-service.ts";
+export { tlaCellCheckResponse } from "./tla-answer.ts";

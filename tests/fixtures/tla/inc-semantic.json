@@ -1,0 +1,40 @@
+{
+ "exercise": {
+  "question": "q",
+  "mode": "pluscal",
+  "head": "---- MODULE Inc ----\nEXTENDS Naturals\nCONSTANT N\n(* --algorithm Inc\nvariables total = 0;\nprocess worker \\in 1..N\nvariables tmp = 0;\nbegin",
+  "tail": "end process;\nend algorithm; *)\n\nDone == \\A p \\in 1..N : pc[p] = \"Done\"\nCorrect == Done => total = N\n====",
+  "config": {
+   "constants": {
+    "N": "2"
+   },
+   "specification": "Spec",
+   "invariants": [
+    "Correct"
+   ]
+  },
+  "witnesses": [
+   {
+    "label": "all done",
+    "expression": "Done"
+   }
+  ]
+ },
+ "solution": "  Inc:\n    total := totl + 1;",
+ "kind": "parse",
+ "result": {
+  "ms": 322,
+  "moduleName": "Inc",
+  "translation": {
+   "ok": true,
+   "timedOut": false,
+   "output": "pcal.trans Version 1.11 of 31 December 2020\nParsing completed.\nTranslation completed.\nNew file Inc.tla written.\n",
+   "module": "---- MODULE Inc ----\nEXTENDS Naturals\nCONSTANT N\n(* --algorithm Inc\nvariables total = 0;\nprocess worker \\in 1..N\nvariables tmp = 0;\nbegin\n\n  Inc:\n    total := totl + 1;\n\nend process;\nend algorithm; *)\n\\* BEGIN TRANSLATION (chksum(pcal) = \"959d2a60\" /\\ chksum(tla) = \"f79655a9\")\nVARIABLES total, pc, tmp\n\nvars == << total, pc, tmp >>\n\nProcSet == (1..N)\n\nInit == (* Global variables *)\n        /\\ total = 0\n        (* Process worker *)\n        /\\ tmp = [self \\in 1..N |-> 0]\n        /\\ pc = [self \\in ProcSet |-> \"Inc\"]\n\nInc(self) == /\\ pc[self] = \"Inc\"\n             /\\ total' = totl + 1\n             /\\ pc' = [pc EXCEPT ![self] = \"Done\"]\n             /\\ tmp' = tmp\n\nworker(self) == Inc(self)\n\n(* Allow infinite stuttering to prevent deadlock on termination. *)\nTerminating == /\\ \\A self \\in ProcSet: pc[self] = \"Done\"\n               /\\ UNCHANGED vars\n\nNext == (\\E self \\in 1..N: worker(self))\n           \\/ Terminating\n\nSpec == Init /\\ [][Next]_vars\n\nTermination == <>(\\A self \\in ProcSet: pc[self] = \"Done\")\n\n\\* END TRANSLATION \n\nDone == \\A p \\in 1..N : pc[p] = \"Done\"\nCorrect == Done => total = N\n====\n"
+  },
+  "sany": {
+   "ok": false,
+   "timedOut": false,
+   "output": "\n****** SANY2 Version 2.1 created 24 February 2014\n\nParsing file /tmp/tla-X/Inc.tla\nParsing file /tmp/Naturals.tla\nSemantic processing of module Naturals\nSemantic processing of module Inc\nSemantic errors:\n\n*** Errors: 1\n\nline 29, col 26 to line 29, col 29 of module Inc\n\nUnknown operator: `totl'.\n\n\n\n"
+  }
+ }
+}

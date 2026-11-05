@@ -2,7 +2,8 @@
 
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
-import type { ArtifactPartProps } from "@/src/core";
+import type { ArtifactPartProps, TlaVerdict } from "@/src/core";
+import { TlaVerdictView } from "@/components/tla/tla-verdict";
 
 /**
  * The practice transcript cards (practice sessions, owner design
@@ -55,6 +56,8 @@ export interface PracticeThinkingData {
 	text: string;
 	/** A Lean problem's submission: the proof and the server's verdict. */
 	lean?: { proof: string; summary?: string; verdict?: { passed: boolean; errors: { line: number; message: string }[] } };
+	/** A TLA+ problem's submission: the solution and the server's verdict. */
+	tla?: { solution: string; summary?: string; verdict?: TlaVerdict };
 }
 
 export function ProblemCard({ part }: ArtifactPartProps) {
@@ -297,6 +300,7 @@ export function ThinkingCard({ data }: { data: PracticeThinkingData }) {
 	// deliberately unread (one lane now). A TRANSCRIPT row (owner round,
 	// 2026-10-07): full-width band + rail, arriving expanded.
 	const lean = data.lean;
+	const tla = data.tla;
 	return (
 		<>
 			{data.text.trim() && <ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} defaultOpen />}
@@ -326,6 +330,22 @@ export function ThinkingCard({ data }: { data: PracticeThinkingData }) {
 							</ul>
 						</div>
 					)}
+				</div>
+			)}
+			{tla && (
+				<div className="my-1 rounded-xl border bg-card p-4" data-testid="tla-submission-card">
+					<div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						Your solution
+						{!tla.verdict ? (
+							<span className="rounded bg-muted px-1.5 py-0.5 normal-case">checking with TLC…</span>
+						) : tla.verdict.passed ? (
+							<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">passes TLC</span>
+						) : (
+							<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">does not pass</span>
+						)}
+					</div>
+					<pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">{tla.solution || "(empty solution)"}</pre>
+					{tla.verdict && !tla.verdict.passed && <TlaVerdictView verdict={tla.verdict} summary={tla.summary ?? ""} className="mt-2" />}
 				</div>
 			)}
 		</>

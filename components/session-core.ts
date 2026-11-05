@@ -698,7 +698,12 @@ export class SessionModel {
 			// optimistically — the card renders from its details the
 			// moment the button fires.
 			optimistic.push({
-				...newThinkingMessage(input.problemCallId, input.text, input.proof !== undefined ? { proof: input.proof } : undefined),
+				...newThinkingMessage(
+					input.problemCallId,
+					input.text,
+					input.proof !== undefined ? { proof: input.proof } : undefined,
+					input.solution !== undefined ? { solution: input.solution } : undefined,
+				),
 				id: localId(),
 			});
 		} else if (input.type === "next") {

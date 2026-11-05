@@ -1,0 +1,48 @@
+{
+ "exercise": {
+  "question": "q",
+  "head": "---- MODULE Counter ----\nEXTENDS Naturals\nCONSTANT N\nVARIABLE x",
+  "tail": "Spec == Init /\\ [][Next]_x /\\ WF_x(Next)\nTypeOK == x \\in 0..N\nReachesN == <>(x = N)\n====",
+  "config": {
+   "constants": {
+    "N": "3"
+   },
+   "init": "Init",
+   "next": "Next",
+   "invariants": [
+    "TypeOK"
+   ],
+   "checkDeadlock": false
+  },
+  "witnesses": [
+   {
+    "label": "x reaches N",
+    "expression": "x = N"
+   },
+   {
+    "label": "x is 2",
+    "expression": "x = 2"
+   }
+  ]
+ },
+ "solution": "Init == x = \"a\"\nNext == x' = x + 1",
+ "kind": "main",
+ "result": {
+  "ms": 870,
+  "moduleName": "Counter",
+  "sany": {
+   "ok": true,
+   "timedOut": false,
+   "output": "\n****** SANY2 Version 2.1 created 24 February 2014\n\nParsing file /tmp/tla-X/Counter.tla\nParsing file /tmp/Naturals.tla\nSemantic processing of module Naturals\nSemantic processing of module Counter\n"
+  },
+  "runs": [
+   {
+    "id": "main",
+    "exitCode": 75,
+    "timedOut": false,
+    "ms": 690,
+    "output": "@!@!@STARTMSG 2262:0 @!@!@\nTLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)\n@!@!@ENDMSG 2262 @!@!@\n@!@!@STARTMSG 2401:3 @!@!@\nPlease run the Java VM which executes TLC with a throughput optimized garbage collector by passing the \"-XX:+UseParallelGC\" property.\n@!@!@ENDMSG 2401 @!@!@\n@!@!@STARTMSG 2187:0 @!@!@\nRunning breadth-first search Model-Checking with fp 121 and seed -2407723034569887024 with 1 worker on 4 cores with 618MB heap and 64MB offheap memory [pid: 1432] (Linux 7.0.0-42-generic amd64, Debian 17.0.21 x86_64, MSBDiskFPSet, DiskStateQueue).\n@!@!@ENDMSG 2187 @!@!@\n@!@!@STARTMSG 2220:0 @!@!@\nStarting SANY...\n@!@!@ENDMSG 2220 @!@!@\nParsing file /tmp/tla-X/run-enEzi8/Counter.tla\nParsing file /tmp/Naturals.tla\nSemantic processing of module Naturals\nSemantic processing of module Counter\n@!@!@STARTMSG 2219:0 @!@!@\nSANY finished.\n@!@!@ENDMSG 2219 @!@!@\n@!@!@STARTMSG 2185:0 @!@!@\nStarting... (2026-11-05 13:34:01)\n@!@!@ENDMSG 2185 @!@!@\n@!@!@STARTMSG 2189:0 @!@!@\nComputing initial states...\n@!@!@ENDMSG 2189 @!@!@\n@!@!@STARTMSG 2102:1 @!@!@\nAttempted to check if the value:\n\"a\"\nis in the integer interval 0..3\nWhile working on the initial state:\nx = \"a\"\n\n@!@!@ENDMSG 2102 @!@!@\n@!@!@STARTMSG 2103:1 @!@!@\nThe error occurred when TLC was evaluating the nested\nexpressions at the following positions:\n0. Line 6, column 9 to line 6, column 15 in Counter\n1. Line 10, column 11 to line 10, column 20 in Counter\n\n\n@!@!@ENDMSG 2103 @!@!@\n@!@!@STARTMSG 2200:0 @!@!@\nProgress(1) at 2026-11-05 13:34:01: 1 states generated (197 s/min), 1 distinct states found (197 ds/min), 1 states left on queue.\n@!@!@ENDMSG 2200 @!@!@\n@!@!@STARTMSG 2199:0 @!@!@\n1 states generated, 1 distinct states found, 1 states left on queue.\n@!@!@ENDMSG 2199 @!@!@\n@!@!@STARTMSG 2186:0 @!@!@\nFinished in 307ms at (2026-11-05 13:34:01)\n@!@!@ENDMSG 2186 @!@!@\n"
+   }
+  ]
+ }
+}

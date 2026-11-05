@@ -11,7 +11,15 @@ import { ThinkingChip } from "@/components/thinking-chip";
 import { cn } from "@/lib/utils";
 import { LeanCell, type LeanCellStatus } from "@/components/lean/lean-cell";
 import { parseLeanExerciseInput, TaskFold } from "@/components/lean/lean-dock";
-import { resolveLeanExercise } from "@/src/core";
+import { resolveLeanExercise, tlaExerciseFromInput } from "@/src/core";
+import { TlaCell, type TlaCellStatus } from "@/components/tla/tla-cell";
+
+/** What a code problem's submission carries besides the thinking: the
+ *  Lean proof or the TLA+ solution (the server adds the verdict). */
+export interface PracticeCodeSubmission {
+	proof?: string;
+	solution?: string;
+}
 
 /**
  * The practice dock (practice sessions, owner design 2026-10-04): an
@@ -38,13 +46,15 @@ export interface PracticeDockProps {
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
 	 *  mode badge would edge toward announcing the target; dropped). */
-	input: { statement: string; lean?: unknown };
+	input: { statement: string; lean?: unknown; tla?: unknown };
+	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
+	chatId?: string;
 	/** Collapse state, owned by the DockOverlay. */
 	expanded: boolean;
 	onExpand: () => void;
 	/** text — POST {type:"thinking"} (one lane; the register is read from the
-	 *  text). A Lean problem also sends the proof. */
-	onSubmit: (text: string, proof?: string) => void;
+	 *  text). A Lean problem also sends the proof, a TLA+ problem the solution. */
+	onSubmit: (text: string, code?: PracticeCodeSubmission) => void;
 	/** Escape in the thinking field stops dictation (threaded from the page). */
 	onEscape?: () => void;
 	/** Compaction is running for this chat (owner round 14): the thinking
@@ -54,7 +64,7 @@ export interface PracticeDockProps {
 	compactionRunning?: boolean;
 }
 
-export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false }: PracticeDockProps) {
+export function PracticeDock({ problemCallId, chatId = "", input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false }: PracticeDockProps) {
 	const [thinking, setThinking] = useState("");
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
@@ -69,6 +79,12 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	}, [input.lean, input.statement]);
 	const proofRef = useRef(lean?.starter ?? "");
 	const [leanStatus, setLeanStatus] = useState<LeanCellStatus>("connecting");
+	// A TLA+ problem (owner, 2026-11-05): the TLA+ cell; every submission
+	// sends the current solution, and the server checks it with TLC.
+	const tla = useMemo(() => (lean || !input.tla ? null : tlaExerciseFromInput(input.tla, input.statement)), [lean, input.tla, input.statement]);
+	const solutionRef = useRef(tla?.starter ?? "");
+	const [tlaStatus, setTlaStatus] = useState<TlaCellStatus>("parsing");
+	const code = lean !== null || tla !== null;
 	// Phones (owner, 2026-11-01): "Your thinking" starts as a chip beside
 	// Submit; dictation fills it unseen, a tap expands it.
 	const phone = useIsPhone();
@@ -77,7 +93,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	// Phones, while typing in a Lean cell: the statement folds to one line and
 	// the cell hides its `import` lines (owner, 2026-11-01).
 	const [editing, setEditing] = useState(false);
-	const fold = phone && editing && lean !== null;
+	const fold = phone && editing && code;
 
 	useDictationTarget(
 		useCallback(
@@ -94,10 +110,11 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	const submit = () => {
 		if (compactionRunning) return;
 		const text = thinkingRef.current.trim();
-		if (text.length === 0 && !lean) return;
+		if (text.length === 0 && !code) return;
 		thinkingRef.current = "";
 		setThinking("");
-		if (lean) onSubmit(text, proofRef.current);
+		if (lean) onSubmit(text, { proof: proofRef.current });
+		else if (tla) onSubmit(text, { solution: solutionRef.current });
 		else onSubmit(text);
 	};
 
@@ -146,13 +163,31 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 						<LeanCell
 							exercise={lean}
 							cellId={problemCallId}
-							initialProof={lean.starter}
+							initialProof={proofRef.current}
 							onProofChange={(p) => {
 								proofRef.current = p;
 							}}
 							onStatus={setLeanStatus}
 							onEditingChange={setEditing}
 							hidePrelude={fold}
+						/>
+					</div>
+				)}
+				{tla && (
+					<div className={fold ? undefined : "mt-3"}>
+						<TlaCell
+							exercise={tla}
+							chatId={chatId}
+							toolCallId={problemCallId}
+							// The dock unmounts the cell while collapsed: restore the
+							// learner's last text, not the starter.
+							initialSolution={solutionRef.current}
+							onSolutionChange={(s) => {
+								solutionRef.current = s;
+							}}
+							onStatus={setTlaStatus}
+							onEditingChange={setEditing}
+							foldHead={fold}
 						/>
 					</div>
 				)}
@@ -222,6 +257,10 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 							<span className={cn(leanStatus === "passes" && "text-emerald-700 dark:text-emerald-400")}>
 								{leanStatus === "passes" ? "Lean accepts this proof." : "Submit sends your proof and thinking."}
 							</span>
+						) : tla ? (
+							<span className={cn(tlaStatus === "parses" && "text-emerald-700 dark:text-emerald-400")}>
+								{tlaStatus === "parses" ? "The module parses. Check runs TLC." : "Submit sends your solution and thinking."}
+							</span>
 						) : (
 							<span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>
 						)}
@@ -230,11 +269,11 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 					<Button
 						type="button"
 						data-testid="practice-send"
-						disabled={(thinking.trim().length === 0 && !lean) || compactionRunning}
+						disabled={(thinking.trim().length === 0 && !code) || compactionRunning}
 						onClick={() => submit()}
 						className="ml-auto h-9 shrink-0 rounded-[6px] px-3.5 text-sm font-medium"
 					>
-						{lean ? "Submit" : "Submit thinking"}
+						{code ? "Submit" : "Submit thinking"}
 					</Button>
 				</div>
 			</div>

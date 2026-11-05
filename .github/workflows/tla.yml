@@ -1,0 +1,114 @@
+name: TLA+ service
+
+# Builds the TLA+ image (deploy/tla) and checks it in the Compose stack:
+# checks from the app container (the only one on the internal "tla"
+# network), no internet from the TLA+ container, not routed by Caddy; then
+# the phone UI against the real tools with screenshots.
+on:
+  push:
+    paths:
+      - "deploy/tla/**"
+      - "deploy/docker-compose.yml"
+      - "deploy/Caddyfile"
+      - "app/api/tla/**"
+      - "components/tla/**"
+      - "src/core/tla-cell.ts"
+      - "src/server/tla-*.ts"
+      - "src/agent/tools/tla.ts"
+      - "tests/e2e/tla-qa.e2e.mjs"
+      - "tests/e2e/scripted-model.mjs"
+      - ".github/workflows/tla.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tla:
+    name: TLA+ tools in the Compose stack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: deploy
+    env:
+      LH_HOST: localhost
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the stack (without Lean, which has its own workflow)
+        run: |
+          docker compose up -d --build learnharness caddy tla
+          for i in $(seq 1 90); do
+            [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/pair)" = 200 ] && break
+            sleep 2
+          done
+          docker compose ps
+      - name: Checks from the app container (model, invariant, deadlock, parse, witnesses, PlusCal)
+        timeout-minutes: 5
+        run: docker compose exec -T learnharness node --input-type=module - http://tla:3400 < tla/test/smoke.mjs
+      - name: No internet from the TLA+ container; not routed by Caddy; the app reports it
+        run: |
+          set -e
+          if docker compose exec -T tla node -e "fetch('https://example.com',{signal:AbortSignal.timeout(5000)}).then(()=>process.exit(0),()=>process.exit(1))"; then
+            echo "the TLA+ container reached the internet"; exit 1
+          fi
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -X POST https://localhost/check)" != 200
+          CODE=$(docker compose exec -T learnharness cat /data/phone-access-code | tr -d '\r\n')
+          COOKIE=$(curl -sk -D - -o /dev/null "https://localhost/pair?code=$CODE" | grep -i set-cookie | sed 's/.*lh_remote=\([^;]*\).*/\1/' | tr -d '\r')
+          test -n "$COOKIE"
+          curl -sk -H "Cookie: lh_remote=$COOKIE" https://localhost/api/tla/status | tee /dev/stderr | grep -q '"available":true'
+          # Unpaired devices cannot use the check route.
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -X POST https://localhost/api/tla/check)" = 401
+      - name: Resource use
+        if: always()
+        run: docker stats --no-stream
+      - name: Logs
+        if: always()
+        run: docker compose logs --tail 80
+
+  qa:
+    name: TLA+ cells QA (phone UI, real TLC)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # contents: write only to publish the screenshots to their own branch.
+    permissions:
+      contents: write
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the TLA+ service
+        run: |
+          docker build -t learnharness-tla deploy/tla
+          docker run -d --name qa-tla -p 127.0.0.1:3401:3400 learnharness-tla
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: npm
+      - run: npm ci
+      - run: npx next build
+      - run: npm install --no-save playwright@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Drive the TLA+ cell states (screenshots)
+        env:
+          LH_TLA_URL: http://127.0.0.1:3401
+        run: node tests/e2e/tla-qa.e2e.mjs --out test-results/tla-qa
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: tla-qa-screenshots
+          path: test-results/tla-qa
+      - name: TLA+ service log
+        if: always()
+        run: docker logs --tail 60 qa-tla
+      - name: Publish the screenshots to qa/tla-screenshots
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd test-results/tla-qa
+          git init -q -b qa/tla-screenshots
+          git add ./*.png results.json
+          git -c user.name="TLA+ QA" -c user.email="tla-qa@users.noreply.github.com" commit -qm "TLA+ QA screenshots for $GITHUB_SHA"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" qa/tla-screenshots

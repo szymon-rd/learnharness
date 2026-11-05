@@ -12,6 +12,8 @@ import {
 	type LeanChecker,
 } from "../../core/lean-cell.ts";
 import { QUESTION_TOOLS } from "../../core/pending.ts";
+import { TLA_EXERCISE_TOOL } from "../../core/tla-cell.ts";
+import { planCodeCells } from "../../core/contracts.ts";
 import type { PlanToolContext } from "./plan.ts";
 
 /**
@@ -65,13 +67,21 @@ export const leanExerciseInput = Type.Object({
 	),
 });
 
-export interface LeanToolContext extends Pick<PlanToolContext, "chatId" | "chatStore"> {
+export interface CodeCellToolContext extends Pick<PlanToolContext, "chatId" | "chatStore"> {}
+
+export interface LeanToolContext extends CodeCellToolContext {
 	/** Runs Lean (the configured service). */
 	lean: LeanChecker;
 }
 
+/** The code-cell question tools (Lean and TLA+): "not two code cells in a
+ *  row" counts them together. */
+export function isCodeCellTool(name: string | null): boolean {
+	return name === LEAN_EXERCISE_TOOL || name === TLA_EXERCISE_TOOL;
+}
+
 /** The newest question call before `toolCallId` in the record, if any. */
-function previousQuestionTool(ctx: LeanToolContext, toolCallId: string): string | null {
+export function previousQuestionTool(ctx: CodeCellToolContext, toolCallId: string): string | null {
 	const messages = ctx.chatStore.getChat(ctx.chatId)?.messages ?? [];
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const m = messages[i] as { role?: string; content?: unknown };
@@ -98,7 +108,7 @@ export function leanExerciseToolFor(
 			"server checks the proof against the exact statement: it passes when Lean reports no errors, no sorry, and only the " +
 			"standard axioms (propext, Classical.choice, Quot.sound; no native_decide). The verdict and his proof come back as " +
 			"the result. Your referenceProof is checked first: if it fails, the errors come back and you fix the exercise. " +
-			"Only for sessions about Lean: the plan must be marked codeCells. Mix it with your other checks — never two code " +
+			"Only for sessions about Lean: the plan must be marked codeCells: \"lean\". Mix it with your other checks — never two code " +
 			"cells in a row unless the learner asked (learnerAsked). ONE question per turn: call it, then end your turn.",
 		parameters: leanExerciseInput,
 		executionMode: "sequential",
@@ -107,13 +117,13 @@ export function leanExerciseToolFor(
 			const nodeText = nodeIdProblem(input.nodeId);
 			if (nodeText) problems.push(nodeText);
 			const tree = ctx.chatStore.getChat(ctx.chatId)?.tree;
-			if (tree && tree.codeCells !== true) {
+			if (tree && planCodeCells(tree) !== "lean") {
 				problems.push(
-					"This session's plan is not marked as a Lean topic, so code cells are off here. Use quiz/explain; " +
-						"if the session IS about Lean, re-call plan_init with codeCells: true.",
+					"This session's plan is not marked as a Lean topic, so Lean code cells are off here. Use quiz/explain; " +
+						'if the session IS about Lean, re-call plan_init with codeCells: "lean".',
 				);
 			}
-			if (previousQuestionTool(ctx, toolCallId) === LEAN_EXERCISE_TOOL && input.learnerAsked !== true) {
+			if (isCodeCellTool(previousQuestionTool(ctx, toolCallId)) && input.learnerAsked !== true) {
 				problems.push(
 					"The previous question was already a code cell. Mix them in: pose a different check first, unless the learner asked for another exercise (then set learnerAsked: true).",
 				);

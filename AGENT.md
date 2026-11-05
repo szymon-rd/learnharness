@@ -73,6 +73,24 @@ Owner preferences that held throughout:
    types, raw JSON in the offline error, completion list staying open after
    Submit. Autocompletion and the phone-readable "Lean says" panel were added.
    Screenshot page: https://claude.ai/artifact/QM9jFZLJBePMTkyJmZtrfo
+6. **Phone declutter + Lean warm-up** (1 Nov, merged to main 5 Nov).
+7. **TLA+ code cells** (5 Nov 2026), "the same way Lean was done". Decisions
+   the owner made (do not change without asking):
+   - **TLC model checking** (not TLAPS proofs); **TLA+ and PlusCal**.
+   - Cell: **locked head + locked tail**, one editable region between them.
+   - The TLC model (constants, INIT/NEXT or SPECIFICATION, INVARIANT,
+     PROPERTY, deadlock) is the tutor's, shown **read-only** under the cell.
+   - Live **SANY parse** while typing + a **Check** button (full TLC run, not
+     recorded); Submit any time.
+   - Pass = TLC explores the whole state space with no violation (and no
+     deadlock if checked) **and every witness ("must be reachable") is
+     reached**, so specs that do nothing fail.
+   - The **tutor verifies the solution does what was asked** and can
+     **overrule a TLC pass** (`tla_review`); the answered card shows it.
+   - **One "Code cells" switch**; the plan names the language
+     (`plan_init.codeCells: "lean" | "tla"`; old `true` = Lean). "Not two code
+     cells in a row" counts Lean and TLA+ together.
+   - Practice: TLA+ problems for propositions from TLA+-marked sessions.
 
 ## 3. The "This operation was aborted" problem (solved 1 Nov 2026)
 
@@ -151,6 +169,36 @@ row"; code cells stay on when Lean is down; a confirmation for Stop.
   while editing a cell the task folds to one line and `import` lines hide
   (`LeanCell` `hidePrelude`, `TaskFold`). Layout changes on blur wait 400 ms so
   a tap on Submit is not moved under the finger.
+
+## 4b. TLA+ code cells: file map
+
+- **Service** `deploy/tla/`: `Dockerfile` (Node 24 + OpenJDK 17 +
+  `tla2tools.jar` v1.7.4, checksum-pinned), `bridge/bridge.mjs`: `POST /check
+  {module, pluscal?, runs?}` (PlusCal translation, SANY, then each TLC run;
+  no runs = parse only; parses and checks have separate lanes), `GET
+  /health`. Returns raw tool output; the app grades. Compose service `tla`
+  (internal network, read-only fs, `TLA_MEM_LIMIT` 1g, TLC 60 s budget),
+  `LH_TLA_URL=http://tla:3400`. Caddy does not route it.
+- **Core** `src/core/tla-cell.ts`: exercise contract + checks, cell document
+  (head, blank, solution, blank, tail), `.cfg` text, witness runs
+  (`LH_Witness_i == ~(expr)` as an invariant), parsers for SANY / TLC
+  `-tool` / pcal.trans output, PlusCal line mapping, `checkTlaSolution`.
+- **Server**: `src/server/tla-service.ts`, `src/server/tla-answer.ts`
+  (grading from the persisted call; `tlaCellCheckResponse` for
+  `app/api/tla/check` — live parse and Check), `app/api/tla/status`,
+  chat-handler grading for `answer` and practice `thinking.solution`.
+- **Agent**: `src/agent/tools/tla.ts` (`tla_exercise`, `tla_review`),
+  practice `problem.tla` block (`src/agent/tools/practice.ts`). Guidance is in
+  the tool descriptions and the answer's `review` line (like Lean, nothing in
+  the prompt files).
+- **Client**: `components/tla/` — `tla-cell.tsx` (CodeMirror, locked
+  regions, live parse, Check, model panel, phone head fold), `tla-dock.tsx`,
+  `tla-verdict.tsx` (errors, counterexample table), `tla-answered-card.tsx`
+  (+ `TlaReviewsContext`), `tla-language.ts`.
+- **Tests/CI**: `tests/tla-cell.test.ts` (fixtures in `tests/fixtures/tla`,
+  captured from the real tools), `tests/tla-exercise-tool.test.ts`;
+  `.github/workflows/tla.yml` (Compose smoke `deploy/tla/test/smoke.mjs` +
+  phone QA `tests/e2e/tla-qa.e2e.mjs`, screenshots to `qa/tla-screenshots`).
 
 ## 5. Working notes
 

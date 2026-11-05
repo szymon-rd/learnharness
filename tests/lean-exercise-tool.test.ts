@@ -30,7 +30,7 @@ after(() => {
 	for (const id of created) fs.rmSync(path.join(PATHS.chats, `${id}.json`), { force: true });
 });
 
-function chatWithPlan(codeCells: boolean | undefined): string {
+function chatWithPlan(codeCells: true | "lean" | "tla" | undefined): string {
 	const chat = chatStore.createChat("Lean cells");
 	created.push(chat.id);
 	chatStore.saveTree(chat.id, { nodes: [{ id: "induction", title: "Induction" }], edges: [], version: 1, ...(codeCells === undefined ? {} : { codeCells }) });
@@ -82,7 +82,7 @@ describe("lean_exercise", () => {
 	});
 
 	it("returns Lean's errors when the reference proof fails", async () => {
-		const tool = leanExerciseToolFor({ chatId: chatWithPlan(true), chatStore, lean: stubLean() }, nodeIdProblem(["induction"]));
+		const tool = leanExerciseToolFor({ chatId: chatWithPlan("lean"), chatStore, lean: stubLean() }, nodeIdProblem(["induction"]));
 		const r = await call(tool, { ...exercise, referenceProof: "  simp" });
 		assert.equal(r.ok, false);
 		assert.match(r.problems.join("\n"), /referenceProof does not pass/);
@@ -94,6 +94,8 @@ describe("lean_exercise", () => {
 		const r = await call(tool, exercise);
 		assert.equal(r.ok, false);
 		assert.match(r.problems.join("\n"), /not marked as a Lean topic/);
+		const tla = leanExerciseToolFor({ chatId: chatWithPlan("tla"), chatStore, lean: stubLean() }, nodeIdProblem(["induction"]));
+		assert.match((await call(tla, exercise)).problems.join("\n"), /not marked as a Lean topic/);
 	});
 
 	it("refuses two code cells in a row unless the learner asked", async () => {
@@ -134,9 +136,12 @@ describe("registration and the plan mark", () => {
 		const chatId = chatWithPlan(undefined);
 		const off = planTools({ chatId, chatStore }).plan_init!;
 		assert.equal("codeCells" in (off.parameters as { properties: object }).properties, false);
-		const on = planTools({ chatId, chatStore }, { codeCells: true }).plan_init!;
-		await on.execute("p1", { mermaid: "graph TD\n  a[A] --> b[B]", codeCells: true } as never);
-		assert.equal(chatStore.getChat(chatId)!.tree!.codeCells, true);
+		const on = planTools({ chatId, chatStore }, { codeCells: ["lean"] }).plan_init!;
+		await on.execute("p1", { mermaid: "graph TD\n  a[A] --> b[B]", codeCells: "lean" } as never);
+		assert.equal(chatStore.getChat(chatId)!.tree!.codeCells, "lean");
+		// A language whose service is down is not offered and not stored.
+		await on.execute("p1b", { mermaid: "graph TD\n  a[A] --> b[B]", codeCells: "tla" } as never);
+		assert.equal(chatStore.getChat(chatId)!.tree!.codeCells, undefined);
 		await on.execute("p2", { mermaid: "graph TD\n  a[A] --> b[B]" } as never);
 		assert.equal(chatStore.getChat(chatId)!.tree!.codeCells, undefined);
 	});
@@ -221,9 +226,9 @@ describe("Lean problems in practice sessions", async () => {
 		assert.match(r.problems, /only for material from Lean sessions/);
 		assert.equal((await run(practiceChat(false), base, false)).ok, true, "plain problems still pose");
 	});
-	it("refuses two Lean problems in a row unless the learner asked", async () => {
+	it("refuses two code problems in a row unless the learner asked", async () => {
 		const chatId = practiceChat(true);
-		assert.match((await run(chatId, { ...base, lean }, true)).problems, /previous problem was already a Lean problem/);
+		assert.match((await run(chatId, { ...base, lean }, true)).problems, /previous problem was already a code problem/);
 		assert.equal((await run(chatId, { ...base, lean: { ...lean, learnerAsked: true } }, true)).ok, true);
 	});
 	it("checks the reference proof", async () => {

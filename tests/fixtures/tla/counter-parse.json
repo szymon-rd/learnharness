@@ -1,0 +1,39 @@
+{
+ "exercise": {
+  "question": "q",
+  "head": "---- MODULE Counter ----\nEXTENDS Naturals\nCONSTANT N\nVARIABLE x",
+  "tail": "Spec == Init /\\ [][Next]_x /\\ WF_x(Next)\nTypeOK == x \\in 0..N\nReachesN == <>(x = N)\n====",
+  "config": {
+   "constants": {
+    "N": "3"
+   },
+   "init": "Init",
+   "next": "Next",
+   "invariants": [
+    "TypeOK"
+   ],
+   "checkDeadlock": false
+  },
+  "witnesses": [
+   {
+    "label": "x reaches N",
+    "expression": "x = N"
+   },
+   {
+    "label": "x is 2",
+    "expression": "x = 2"
+   }
+  ]
+ },
+ "solution": "Init == x = 0\nNext == x' = x +",
+ "kind": "parse",
+ "result": {
+  "ms": 225,
+  "moduleName": "Counter",
+  "sany": {
+   "ok": false,
+   "timedOut": false,
+   "output": "\n****** SANY2 Version 2.1 created 24 February 2014\n\nParsing file /tmp/tla-X/Counter.tla\n***Parse Error***\nEncountered \"Beginning of definition\" at line 7, column 14 and token \"=\" \n\nResidual stack trace follows:\nExtendableExpr starting at line 7, column 14.\nExtendableExpr starting at line 7, column 9.\nExpression starting at line 7, column 9.\nDefinition starting at line 7, column 1.\nModule body starting at line 3, column 1.\n\n\nFatal errors while parsing TLA+ spec in file Counter.tla\n\ntla2sany.semantic.AbortException\n*** Abort messages: 1\n\nIn module Counter\n\nCould not parse module Counter from file Counter.tla\n\n\n"
+  }
+ }
+}

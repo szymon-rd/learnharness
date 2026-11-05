@@ -323,6 +323,14 @@ export function AgentSection({
 			.then(setLean)
 			.catch(() => setLean({ available: false, reason: "Could not reach the server." }));
 	}, []);
+	/** TLA+ for code cells (/api/tla/status): null while loading. */
+	const [tla, setTla] = useState<{ available: boolean; reason?: string } | null>(null);
+	useEffect(() => {
+		fetch("/api/tla/status")
+			.then((r) => r.json())
+			.then(setTla)
+			.catch(() => setTla({ available: false, reason: "Could not reach the server." }));
+	}, []);
 
 	const refreshSearch = () =>
 		fetch("/api/search")
@@ -772,19 +780,21 @@ export function AgentSection({
 						</SettingsRow>
 					);
 				})()}
-				{/* Code cells (owner, 2026-10-30): Off | Mixed in. "Mixed in" lets the
-				    teacher add Lean exercises among its checks — only in sessions
-				    about Lean (the plan's own mark). Needs the Lean service. */}
+				{/* Code cells (owner, 2026-10-30; TLA+ 2026-11-05): Off | Mixed in.
+				    "Mixed in" lets the teacher add Lean or TLA+ exercises among its
+				    checks — only in sessions about that language (the plan's own
+				    mark). Greyed only when neither service is available. */}
 				{(() => {
 					const on = agent?.codeCells?.enabled === true;
-					const unavailable = lean !== null && !lean.available;
+					const unavailable = lean !== null && tla !== null && !lean.available && !tla.available;
+					const languages = [lean?.available ? "Lean" : null, tla?.available ? "TLA+" : null].filter(Boolean).join(" or ") || "Lean or TLA+";
 					return (
 						<SettingsRow
 							label="Code cells"
 							hint={
 								unavailable
-									? (lean?.reason ?? "Lean is not available on this server.")
-									: "Lean exercises among the checks, only when a session is about Lean"
+									? "Neither Lean nor TLA+ is available on this server."
+									: `${languages} exercises among the checks, only when a session is about that language`
 							}
 							testid="code-cells-row"
 						>

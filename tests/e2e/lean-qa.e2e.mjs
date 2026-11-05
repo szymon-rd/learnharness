@@ -251,7 +251,7 @@ async function phone(browser, base) {
 		await answerOption(page, { dontKnow: true });
 		await page.getByTestId("plan-chip").waitFor({ state: "visible", timeout: 60_000 });
 		const record = await (await context.request.get(`/api/chats/${s.teachId}`)).json();
-		if (record.tree?.codeCells !== true) throw new Error("the plan is not marked as a Lean topic");
+		if (record.tree?.codeCells !== "lean") throw new Error("the plan is not marked as a Lean topic");
 	});
 
 	await step("L02", "the Lean exercise opens in the dock; Lean starts (status badge)", page, w, async () => {

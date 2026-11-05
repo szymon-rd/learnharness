@@ -125,6 +125,32 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		return { heading: "Lean exercise", body };
 	}
 
+	if (result.toolName === "tla_exercise") {
+		// A TLA+ code cell (owner, 2026-11-05): the task, the learner's
+		// solution and TLC's verdict. The teacher's review follows as its
+		// own entry (tla_review).
+		const tla = (result.details as { tla?: { solution?: string; summary?: string; verdict?: { passed?: boolean } } } | undefined)?.tla;
+		const question = typeof out?.questionText === "string" && out.questionText ? out.questionText : "(no question text)";
+		const body = [`**Q:** ${question}`];
+		if (out?.dismissed === true) body.push("The learner skipped this exercise.");
+		else if (tla) {
+			body.push(`${tla.verdict?.passed ? "TLC accepted the learner's solution." : "TLC did not accept the learner's solution."}${tla.summary ? ` ${tla.summary}` : ""}`);
+			if (typeof tla.solution === "string" && tla.solution.trim()) body.push("```tla\n" + tla.solution.replace(/\s+$/, "") + "\n```");
+		}
+		const thinking = (result.details as { thinking?: string } | undefined)?.thinking;
+		if (typeof thinking === "string" && thinking) body.push(`*(the learner's thinking: ${thinking})*`);
+		return { heading: "TLA+ exercise", body };
+	}
+
+	if (result.toolName === "tla_review") {
+		const d = result.details as { accepted?: boolean; reason?: string } | undefined;
+		if (typeof d?.accepted !== "boolean") return { heading: "Tutor's review", body: [] };
+		return {
+			heading: "Tutor's review",
+			body: [`${d.accepted ? "The tutor accepted the solution as doing what was asked." : "The tutor did not accept the solution: it passes TLC but does not do what was asked."}${d.reason ? ` ${d.reason}` : ""}`],
+		};
+	}
+
 	if (ctx !== undefined && result.toolName === PRACTICE_PROBLEM_TOOL) {
 		const statement = ctx.calls.get(result.toolCallId)?.args?.statement;
 		return {
