@@ -1,0 +1,149 @@
+[
+  {
+    "id": "T00",
+    "title": "settings: Code cells is Off by default and offers TLA+; switch to Mixed in",
+    "status": "PASS",
+    "note": "",
+    "ms": 2113
+  },
+  {
+    "id": "T01",
+    "title": "teaching session on TLA+: probe, then the plan is marked as a TLA+ topic",
+    "status": "PASS",
+    "note": "",
+    "ms": 6069
+  },
+  {
+    "id": "T02",
+    "title": "the TLA+ exercise opens in the dock; the starter parses (live SANY)",
+    "status": "PASS",
+    "note": "",
+    "ms": 3756
+  },
+  {
+    "id": "T03",
+    "title": "the head is locked: typing into it changes nothing",
+    "status": "PASS",
+    "note": "",
+    "ms": 94
+  },
+  {
+    "id": "T04",
+    "title": "typing an unfinished expression: SANY's error is marked and explained",
+    "status": "PASS",
+    "note": "",
+    "ms": 1924
+  },
+  {
+    "id": "T05",
+    "title": "Check on the starter: TLC shows the violated invariant and the counterexample",
+    "status": "PASS",
+    "note": "",
+    "ms": 3072
+  },
+  {
+    "id": "T06",
+    "title": "a spec that never moves passes the invariant but not the witness",
+    "status": "PASS",
+    "note": "",
+    "ms": 2478
+  },
+  {
+    "id": "T07",
+    "title": "autocompletion offers keywords and the module's names",
+    "status": "PASS",
+    "note": "",
+    "ms": 674
+  },
+  {
+    "id": "T08",
+    "title": "the fixed spec: Check passes; the TLC model is shown read-only",
+    "status": "PASS",
+    "note": "",
+    "ms": 2528
+  },
+  {
+    "id": "T09",
+    "title": "submit: TLC's verdict card, the tutor's review, then its reply",
+    "status": "PASS",
+    "note": "",
+    "ms": 2667
+  },
+  {
+    "id": "T10",
+    "title": "a second code cell in a row is refused: the tutor mixes in a quiz",
+    "status": "PASS",
+    "note": "",
+    "ms": 1736
+  },
+  {
+    "id": "T11",
+    "title": "PlusCal exercise: while editing, the task and the locked head fold to one line",
+    "status": "PASS",
+    "note": "",
+    "ms": 3015
+  },
+  {
+    "id": "T12",
+    "title": "a PlusCal syntax error comes from the translator, at the learner's line",
+    "status": "PASS",
+    "note": "",
+    "ms": 1422
+  },
+  {
+    "id": "T13",
+    "title": "the checker goes offline: the cell says so; Submit keeps the exercise",
+    "status": "PASS",
+    "note": "",
+    "ms": 7308
+  },
+  {
+    "id": "T14",
+    "title": "a solution that passes TLC but does nothing: the tutor overrules the pass",
+    "status": "PASS",
+    "note": "",
+    "ms": 3220
+  },
+  {
+    "id": "T15",
+    "title": "practice: a TLA+ problem for material from the TLA+ session",
+    "status": "PASS",
+    "note": "",
+    "ms": 5716
+  },
+  {
+    "id": "T16",
+    "title": "practice: the starter is graded by TLC in the submission card (counterexample)",
+    "status": "PASS",
+    "note": "",
+    "ms": 1551
+  },
+  {
+    "id": "T17",
+    "title": "practice: the fixed spec passes and the problem concludes",
+    "status": "PASS",
+    "note": "the dock did not fold on scroll here",
+    "ms": 3150
+  },
+  {
+    "id": "T18",
+    "title": "practice: a second code problem in a row is refused; a plain problem follows",
+    "status": "PASS",
+    "note": "",
+    "ms": 1468
+  },
+  {
+    "id": "D1",
+    "title": "desktop: the TLA+ teaching session's cards",
+    "status": "PASS",
+    "note": "",
+    "ms": 939
+  },
+  {
+    "id": "D2",
+    "title": "desktop: a live TLA+ cell with a counterexample (practice)",
+    "status": "PASS",
+    "note": "",
+    "ms": 5397
+  }
+]
