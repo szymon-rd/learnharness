@@ -13,6 +13,7 @@ import {
 } from "../../core/lean-cell.ts";
 import { QUESTION_TOOLS } from "../../core/pending.ts";
 import { TLA_EXERCISE_TOOL } from "../../core/tla-cell.ts";
+import { CPP_EXERCISE_TOOL } from "../../core/cpp-cell.ts";
 import { planCodeCells } from "../../core/contracts.ts";
 import type { PlanToolContext } from "./plan.ts";
 
@@ -77,7 +78,7 @@ export interface LeanToolContext extends CodeCellToolContext {
 /** The code-cell question tools (Lean and TLA+): "not two code cells in a
  *  row" counts them together. */
 export function isCodeCellTool(name: string | null): boolean {
-	return name === LEAN_EXERCISE_TOOL || name === TLA_EXERCISE_TOOL;
+	return name === LEAN_EXERCISE_TOOL || name === TLA_EXERCISE_TOOL || name === CPP_EXERCISE_TOOL;
 }
 
 /** The newest question call before `toolCallId` in the record, if any. */

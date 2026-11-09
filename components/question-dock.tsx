@@ -41,6 +41,7 @@ import {
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
 import { LeanDockForm, parseLeanExerciseInput } from "@/components/lean/lean-dock";
 import { parseTlaExerciseInput, TlaDockForm } from "@/components/tla/tla-dock";
+import { CppDockForm, parseCppExerciseInput } from "@/components/cpp/cpp-dock";
 
 /**
  * The question dock — a pending quiz/ask REPLACES the chat composer: the
@@ -63,7 +64,7 @@ import { parseTlaExerciseInput, TlaDockForm } from "@/components/tla/tla-dock";
  */
 
 export interface QuestionDockProps {
-	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise";
+	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise";
 	toolCallId: string;
 	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
 	chatId?: string;
@@ -187,6 +188,35 @@ export function QuestionDock({
 			</>
 		);
 	}
+	// C++ code cells (owner, 2026-11-09): the same shape with the C++ cell.
+	if (toolName === "cpp_exercise") {
+		const cpp = parseCppExerciseInput(input);
+		if (!cpp) {
+			return (
+				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
+					This exercise arrived malformed — the transcript keeps the retry.
+				</div>
+			);
+		}
+		return (
+			<>
+				{!expanded && <QuestionDockBar toolName="cpp_exercise" question={cpp.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="C++" />}
+				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
+					<CppDockForm
+						chatId={chatId}
+						toolCallId={toolCallId}
+						exercise={cpp}
+						onSubmit={onSubmit}
+						initialDraft={initialDraft}
+						onSaveDraft={onSaveDraft}
+						onEscape={onEscape}
+						dictationClaim={dictationClaim}
+						compactionRunning={compactionRunning}
+					/>
+				</div>
+			</>
+		);
+	}
 	// Parse, don't cast (src/core/tool-parts.ts): the model authored this
 	// input, and only the schema the tool declared vouches for its shape.
 	// The dock mounts on input-available parts (already validated at the
@@ -263,7 +293,7 @@ export function QuestionDockBar({
 	label,
 	toolLabel,
 }: {
-	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise" | "tla_exercise";
+	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise" | "tla_exercise" | "cpp_exercise";
 	question: string;
 	onExpand: () => void;
 	variant?: "collapsed" | "reveal";

@@ -50,6 +50,9 @@ import { TLA_EXERCISE_TOOL } from "../core/tla-cell.ts";
 import { planCodeCells, type CodeCellLanguage } from "../core/contracts.ts";
 import { gradeTlaAnswer, gradeTlaSolution, TlaAnswerError } from "./tla-answer.ts";
 import { tlaChecker } from "./tla-service.ts";
+import { CPP_EXERCISE_TOOL } from "../core/cpp-cell.ts";
+import { CppAnswerError, gradeCppAnswer, gradeCppSolution } from "./cpp-answer.ts";
+import { cppChecker } from "./cpp-service.ts";
 import { codeCellsEnabled } from "../core/settings-resolution.ts";
 import { gradeLeanAnswer, gradeLeanProof, LeanAnswerError } from "./lean-answer.ts";
 import { leanChecker } from "./lean-service.ts";
@@ -108,6 +111,7 @@ function codeSourcedPropositions(language: CodeCellLanguage, ids: string[]): boo
 
 const leanSourcedPropositions = (ids: string[]) => codeSourcedPropositions("lean", ids);
 const tlaSourcedPropositions = (ids: string[]) => codeSourcedPropositions("tla", ids);
+const cppSourcedPropositions = (ids: string[]) => codeSourcedPropositions("cpp", ids);
 
 function settlementErrorText(error: unknown): string {
 	return error instanceof TurnPersistenceError ? error.message : "An error occurred.";
@@ -283,6 +287,16 @@ export async function handleChatInput(
 		}
 		// TLA+ code cells (owner, 2026-11-05): the same — only the solution
 		// comes from the client; TLC's verdict is computed from the persisted call.
+		// C++ code cells (owner, 2026-11-09): the same, every test run on the server.
+		if (pending?.toolCallId === input.toolCallId && pending.tool === CPP_EXERCISE_TOOL) {
+			try {
+				input = { ...input, answer: await gradeCppAnswer(pending.input, input.answer, cppChecker()) };
+			} catch (err) {
+				if (err instanceof CppAnswerError) return Response.json({ error: err.message }, { status: err.status });
+				throw err;
+			}
+			record = stores.chatStore.getChat(chatId) ?? record;
+		}
 		if (pending?.toolCallId === input.toolCallId && pending.tool === TLA_EXERCISE_TOOL) {
 			try {
 				input = { ...input, answer: await gradeTlaAnswer(pending.input, input.answer, tlaChecker()) };
@@ -309,7 +323,8 @@ export async function handleChatInput(
 			record = stores.chatStore.getChat(chatId) ?? record;
 		} else {
 			// Not a Lean problem: the proof field means nothing here.
-			input = { type: "thinking", problemCallId: input.problemCallId, text: input.text, ...(input.solution !== undefined ? { solution: input.solution } : {}) };
+			const { proof: _proof, ...rest } = input;
+			input = rest;
 		}
 	}
 	// TLA+ problems: the submission carries the solution; TLC's verdict comes
@@ -327,7 +342,28 @@ export async function handleChatInput(
 			}
 			record = stores.chatStore.getChat(chatId) ?? record;
 		} else {
-			input = { type: "thinking", problemCallId: input.problemCallId, text: input.text, ...(input.proof !== undefined ? { proof: input.proof } : {}) };
+			const { solution: _solution, ...rest } = input;
+			input = rest;
+		}
+	}
+
+	// C++ problems: the submission carries the solution; every test runs
+	// against the persisted problem call's `cpp` block.
+	if (input.type === "thinking" && input.cppSolution !== undefined) {
+		const active = activeProblemOf(record.messages);
+		const exercise = active?.toolCallId === input.problemCallId ? (active.input as { cpp?: unknown }).cpp : undefined;
+		if (exercise) {
+			try {
+				const graded = await gradeCppSolution(exercise, input.cppSolution, cppChecker());
+				input = { ...input, cpp: { solution: input.cppSolution, verdict: graded.verdict, summary: graded.summary } };
+			} catch (err) {
+				if (err instanceof CppAnswerError) return Response.json({ error: err.message }, { status: err.status });
+				throw err;
+			}
+			record = stores.chatStore.getChat(chatId) ?? record;
+		} else {
+			const { cppSolution: _drop, ...rest } = input;
+			input = rest;
 		}
 	}
 
@@ -568,6 +604,11 @@ export async function handleChatInput(
 							const check = tlaChecker();
 							return check && codeCellsEnabled(effective, true) ? { tla: { check, tlaSourced: tlaSourcedPropositions } } : {};
 						})(),
+						// C++ problems (owner, 2026-11-09): the same rule with the C++ service.
+						...(() => {
+							const check = cppChecker();
+							return check && codeCellsEnabled(effective, true) ? { cpp: { check, cppSourced: cppSourcedPropositions } } : {};
+						})(),
 					},
 					agentOpts,
 				)
@@ -590,6 +631,11 @@ export async function handleChatInput(
 						...(() => {
 							const tla = tlaChecker();
 							return tla && codeCellsEnabled(effective, true) ? { tla } : {};
+						})(),
+						// C++ code cells: the same setting AND the C++ service.
+						...(() => {
+							const cpp = cppChecker();
+							return cpp && codeCellsEnabled(effective, true) ? { cpp } : {};
 						})(),
 					},
 					agentOpts,

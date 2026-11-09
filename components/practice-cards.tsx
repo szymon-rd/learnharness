@@ -2,7 +2,8 @@
 
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
-import type { ArtifactPartProps, TlaVerdict } from "@/src/core";
+import type { ArtifactPartProps, CppVerdict, TlaVerdict } from "@/src/core";
+import { CppVerdictView } from "@/components/cpp/cpp-verdict";
 import { TlaVerdictView } from "@/components/tla/tla-verdict";
 
 /**
@@ -58,6 +59,8 @@ export interface PracticeThinkingData {
 	lean?: { proof: string; summary?: string; verdict?: { passed: boolean; errors: { line: number; message: string }[] } };
 	/** A TLA+ problem's submission: the solution and the server's verdict. */
 	tla?: { solution: string; summary?: string; verdict?: TlaVerdict };
+	/** A C++ problem's submission: the solution and the server's verdict. */
+	cpp?: { solution: string; summary?: string; verdict?: CppVerdict };
 }
 
 export function ProblemCard({ part }: ArtifactPartProps) {
@@ -301,6 +304,7 @@ export function ThinkingCard({ data }: { data: PracticeThinkingData }) {
 	// 2026-10-07): full-width band + rail, arriving expanded.
 	const lean = data.lean;
 	const tla = data.tla;
+	const cpp = data.cpp;
 	return (
 		<>
 			{data.text.trim() && <ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} defaultOpen />}
@@ -346,6 +350,22 @@ export function ThinkingCard({ data }: { data: PracticeThinkingData }) {
 					</div>
 					<pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">{tla.solution || "(empty solution)"}</pre>
 					{tla.verdict && !tla.verdict.passed && <TlaVerdictView verdict={tla.verdict} summary={tla.summary ?? ""} className="mt-2" />}
+				</div>
+			)}
+			{cpp && (
+				<div className="my-1 rounded-xl border bg-card p-4" data-testid="cpp-submission-card">
+					<div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						Your code
+						{!cpp.verdict ? (
+							<span className="rounded bg-muted px-1.5 py-0.5 normal-case">compiling and running the tests…</span>
+						) : cpp.verdict.passed ? (
+							<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">all tests pass</span>
+						) : (
+							<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">does not pass</span>
+						)}
+					</div>
+					<pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">{cpp.solution || "(empty)"}</pre>
+					{cpp.verdict && !cpp.verdict.passed && <CppVerdictView verdict={cpp.verdict} summary={cpp.summary ?? ""} className="mt-2" />}
 				</div>
 			)}
 		</>

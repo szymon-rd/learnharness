@@ -1,0 +1,115 @@
+{
+ "exercise": {
+  "question": "Return the sum of the elements.",
+  "head": "#include <vector>\n\n// int sum(const std::vector<int>& v);",
+  "tests": [
+   {
+    "name": "three numbers",
+    "code": "CHECK_EQ(sum({1, 2, 3}), 6);"
+   },
+   {
+    "name": "empty",
+    "code": "CHECK_EQ(sum({}), 0);"
+   },
+   {
+    "name": "negatives",
+    "code": "CHECK_EQ(sum({-5, 5, -1}), -1);",
+    "hidden": true
+   }
+  ]
+ },
+ "solution": "int total(const std::vector<int>& v) {\n  return 0;\n}",
+ "mode": "all",
+ "nonce": "fixturenonce",
+ "result": {
+  "ms": 465,
+  "compile": {
+   "ok": false,
+   "timedOut": false,
+   "diagnostics": [
+    {
+     "kind": "warning",
+     "message": "unused parameter 'v'",
+     "option": "-Wunused-parameter",
+     "option_url": "https://gcc.gnu.org/onlinedocs/gcc-14.2.0/gcc/Warning-Options.html#index-Wno-unused-parameter",
+     "children": [],
+     "column-origin": 1,
+     "locations": [
+      {
+       "caret": {
+        "file": "cell.cpp",
+        "line": 5,
+        "display-column": 35,
+        "byte-column": 35,
+        "column": 35
+       },
+       "start": {
+        "file": "cell.cpp",
+        "line": 5,
+        "display-column": 11,
+        "byte-column": 11,
+        "column": 11
+       }
+      }
+     ],
+     "escape-source": false
+    },
+    {
+     "kind": "error",
+     "message": "'sum' was not declared in this scope",
+     "children": [],
+     "column-origin": 1,
+     "locations": [
+      {
+       "caret": {
+        "file": "test 1",
+        "line": 1,
+        "display-column": 1,
+        "byte-column": 1,
+        "column": 1
+       }
+      }
+     ],
+     "escape-source": false
+    },
+    {
+     "kind": "error",
+     "message": "'sum' was not declared in this scope",
+     "children": [],
+     "column-origin": 1,
+     "locations": [
+      {
+       "caret": {
+        "file": "test 2",
+        "line": 1,
+        "display-column": 1,
+        "byte-column": 1,
+        "column": 1
+       }
+      }
+     ],
+     "escape-source": false
+    },
+    {
+     "kind": "error",
+     "message": "'sum' was not declared in this scope",
+     "children": [],
+     "column-origin": 1,
+     "locations": [
+      {
+       "caret": {
+        "file": "test 3",
+        "line": 1,
+        "display-column": 1,
+        "byte-column": 1,
+        "column": 1
+       }
+      }
+     ],
+     "escape-source": false
+    }
+   ],
+   "other": ""
+  }
+ }
+}

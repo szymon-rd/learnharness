@@ -20,7 +20,8 @@ import { BrailleSpinner } from "@/components/braille-spinner";
 import { LiveToolCard } from "@/components/artifacts/live-tool-card";
 import { LeanPreparingLine } from "@/components/lean/lean-preparing-line";
 import { TlaPreparingLine } from "@/components/tla/tla-preparing-line";
-import { collectTlaReviews, sameTlaReviews, TlaReviewsContext, type TlaReviewView } from "@/components/tla/tla-answered-card";
+import { CppPreparingLine } from "@/components/cpp/cpp-preparing-line";
+import { collectCodeReviews, sameCodeReviews, CodeReviewsContext, type CodeReviewView } from "@/components/code-reviews";
 import type { PracticeCodeSubmission } from "@/components/practice-dock";
 import { useIsPhone, useSoftKeyboardOpen } from "@/components/phone-layout";
 import { ThinkingChip } from "@/components/thinking-chip";
@@ -520,6 +521,7 @@ export function Chat({
 				text,
 				...(code?.proof !== undefined ? { proof: code.proof } : {}),
 				...(code?.solution !== undefined ? { solution: code.solution } : {}),
+				...(code?.cppSolution !== undefined ? { cppSolution: code.cppSolution } : {}),
 			});
 		},
 		[send],
@@ -1347,14 +1349,14 @@ export function Chat({
 		}),
 		[chatId, syncFromServer, send],
 	);
-	// The teacher's reviews of TLA+ answers (tla_review): the answered cards
-	// read theirs. Stable unless a review changes, so streaming does not
-	// re-render the cards.
-	const tlaReviewsRef = useRef<ReadonlyMap<string, TlaReviewView>>(new Map());
-	const tlaReviews = useMemo(() => {
-		const next = collectTlaReviews(messages as readonly { parts?: readonly unknown[] }[]);
-		if (!sameTlaReviews(next, tlaReviewsRef.current)) tlaReviewsRef.current = next;
-		return tlaReviewsRef.current;
+	// The tutor's reviews of code-cell answers (tla_review, cpp_review): the
+	// answered cards read theirs. Stable unless a review changes, so
+	// streaming does not re-render the cards.
+	const codeReviewsRef = useRef<ReadonlyMap<string, CodeReviewView>>(new Map());
+	const codeReviews = useMemo(() => {
+		const next = collectCodeReviews(messages as readonly { parts?: readonly unknown[] }[]);
+		if (!sameCodeReviews(next, codeReviewsRef.current)) codeReviewsRef.current = next;
+		return codeReviewsRef.current;
 	}, [messages]);
 	const sessionMermaid = useMemo(
 		() => ({
@@ -1366,7 +1368,7 @@ export function Chat({
 
 	return (
 		<ChatActionsContext.Provider value={chatActions}>
-		<TlaReviewsContext.Provider value={tlaReviews}>
+		<CodeReviewsContext.Provider value={codeReviews}>
 		<SessionMermaidContext.Provider value={sessionMermaid}>
 		<JobsContext.Provider value={jobs}>
 		{/* The session surface: the transcript column (header + scroller) and
@@ -1717,7 +1719,7 @@ export function Chat({
 				// the learner sends it themselves.
 			}}
 		/>
-		</TlaReviewsContext.Provider>
+		</CodeReviewsContext.Provider>
 		</ChatActionsContext.Provider>
 	);
 }
@@ -2037,7 +2039,8 @@ const TranscriptRow = memo(function TranscriptRow({
 									case "tool-explain":
 									case "tool-recall":
 									case "tool-lean_exercise":
-									case "tool-tla_exercise": {
+									case "tool-tla_exercise":
+									case "tool-cpp_exercise": {
 										// Pending/streaming questions live in the dock, not the
 										// transcript; answered ones render as graded records.
 										if (part.state === "output-available") {
@@ -2052,6 +2055,9 @@ const TranscriptRow = memo(function TranscriptRow({
 										}
 										if (part.type === "tool-tla_exercise" && part.state === "input-streaming") {
 											return <TlaPreparingLine key={pi} />;
+										}
+										if (part.type === "tool-cpp_exercise" && part.state === "input-streaming") {
+											return <CppPreparingLine key={pi} />;
 										}
 										// A Lean exercise stays input-streaming while its reference
 										// proof is checked; say so (and when Lean is still starting).
@@ -2560,7 +2566,7 @@ function DockOverlay({
 						>
 							{pending ? (
 								<QuestionDock
-									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise"}
+									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise"}
 									toolCallId={pending.toolCallId}
 									chatId={chatId}
 									input={pending.input as never}
@@ -2579,7 +2585,7 @@ function DockOverlay({
 								<PracticeDock
 									problemCallId={practice.toolCallId}
 									chatId={chatId}
-									input={practice.input as { statement: string; lean?: unknown; tla?: unknown }}
+									input={practice.input as { statement: string; lean?: unknown; tla?: unknown; cpp?: unknown }}
 									expanded={expanded}
 									onExpand={() => {
 										setExpanded(true);

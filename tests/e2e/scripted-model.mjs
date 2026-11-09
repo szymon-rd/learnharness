@@ -400,6 +400,7 @@ function teacher(context, call) {
 	const teach = msgs.slice(handoffAt + 1);
 	if (tools.has("lean_exercise") && aboutLean(msgs)) return leanTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
 	if (tools.has("tla_exercise") && aboutTla(msgs)) return tlaTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
+	if (tools.has("cpp_exercise") && aboutCpp(msgs)) return cppTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
 	const calls = toolCallsOf(teach);
 	const done = (name) => calls.some((c) => c.name === name && resultFor(teach, c.id) && !resultFor(teach, c.id).isError);
 	const questions = calls.filter((c) => ["quiz", "explain", "ask_user_question"].includes(c.name));
@@ -475,6 +476,7 @@ function practice(context, call) {
 	const msgs = conversation(context);
 	if (toolDeclaration(context, "problem").includes('"lean"') && aboutLean(msgs)) return leanPractice(context, call, msgs);
 	if (toolDeclaration(context, "problem").includes('"tla"') && aboutTla(msgs)) return tlaPractice(context, call, msgs);
+	if (toolDeclaration(context, "problem").includes('"cpp"') && aboutCpp(msgs)) return cppPractice(context, call, msgs);
 	const calls = toolCallsOf(msgs);
 	const posed = calls.filter((c) => c.name === "problem" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
 	const concluded = calls.filter((c) => c.name === "conclude" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
@@ -886,6 +888,160 @@ function tlaPractice(context, call, msgs) {
 		return reply([fauxText(posed.length === 0 ? "A TLA+ one to start." : "Another TLA+ one."), call("problem", { ...TLA_PROBLEM, ...target })]);
 	}
 	return reply([fauxText(active ? "Edit the spec, use Check, and submit when TLC accepts it." : "Press **Next problem** to continue.")]);
+}
+
+// ─── C++ code cells (tests/e2e/cpp-qa.e2e.mjs) ─────────────────────────────
+//
+// Only when code cells are on (the tools carry cpp_exercise / the problem
+// tool's cpp block) AND the learner's topic mentions C++.
+
+function aboutCpp(msgs) {
+	return msgs.some((m) => m.role === "user" && /\bC\+\+/.test(textOf(m)) && !textOf(m).startsWith("[Session context]"));
+}
+
+const CPP_PLAN = ["graph TD", "  loops[Loops over a vector] --> bounds[Index bounds]", "  bounds --> strings[Strings]"].join("\n");
+
+const CPP_EX1 = {
+	nodeId: "loops",
+	question: "Implement `sum` so it returns the sum of the elements of `v` (0 for an empty vector). The starter has a bug — use **Check** to find it.",
+	head: "#include <vector>\n\n// Return the sum of the elements of v.",
+	starter: "int sum(const std::vector<int>& v) {\n  int s = 0;\n  for (std::size_t i = 0; i <= v.size(); i++) s += v[i];\n  return s;\n}",
+	tests: [
+		{ name: "three numbers", code: "CHECK_EQ(sum({1, 2, 3}), 6);" },
+		{ name: "empty", code: "CHECK_EQ(sum({}), 0);" },
+		{ name: "negatives", code: "CHECK_EQ(sum({-5, 5, -1}), -1);", hidden: true },
+	],
+	referenceSolution: "int sum(const std::vector<int>& v) {\n  int s = 0;\n  for (int x : v) s += x;\n  return s;\n}",
+};
+
+const CPP_EX2 = {
+	nodeId: "strings",
+	question: "Implement `reversed` so it returns `s` reversed, **with your own loop** (not `std::reverse`).",
+	head: "#include <string>\n\n// Return s reversed, using a loop.",
+	starter: "std::string reversed(const std::string& s) {\n  return s;\n}",
+	tests: [
+		{ name: "word", code: 'CHECK_EQ(reversed("abc"), std::string("cba"));' },
+		{ name: "empty", code: 'CHECK_EQ(reversed(""), std::string(""));' },
+		{ name: "palindrome", code: 'CHECK_EQ(reversed("abba"), std::string("abba"));', hidden: true },
+	],
+	referenceSolution: "std::string reversed(const std::string& s) {\n  std::string out;\n  for (std::size_t i = s.size(); i > 0; i--) out += s[i - 1];\n  return out;\n}",
+};
+
+const CPP_QUIZ = {
+	type: "check",
+	nodeId: "bounds",
+	question: "For a vector `v`, which index is out of bounds?",
+	options: [
+		{ label: "`v.size()`", value: "size" },
+		{ label: "`0` when `v` is not empty", value: "zero" },
+		{ label: "`v.size() - 1` when `v` is not empty", value: "last" },
+	],
+	explanation: "Valid indices are 0 … size()-1; reading v[v.size()] is undefined behavior.",
+	correctAnswer: "size",
+};
+
+function cppAnswer(msgs, c) {
+	return parseJson(textOf(resultFor(msgs, c.id) ?? {})) ?? {};
+}
+
+function cppVerdictText(msgs, c, reviews) {
+	const a = cppAnswer(msgs, c);
+	if (a.dismissed) return "Skipped — fine.";
+	const review = reviews.find((r) => r.arguments.exerciseCallId === c.id);
+	if (a.correct === true && review && review.arguments.accepted === false) return `The tests pass, but that is not what was asked: ${review.arguments.reason}`;
+	if (a.correct === true) return "All tests pass, and it does what was asked — well done.";
+	const hidden = (a.failedTests ?? []).filter((t) => t.hidden).map((t) => t.name);
+	return `Not yet (${a.verdict ?? "the tests fail"})${hidden.length ? ` — a hidden test failed: ${hidden.join(", ")}` : ""}. Look at the card; we'll come back to it.`;
+}
+
+function cppTeacher(context, call, msgs, teach, ack) {
+	const calls = toolCallsOf(teach);
+	const ok = (c) => resultFor(teach, c.id) && !resultFor(teach, c.id).isError;
+	if (!calls.some((c) => c.name === "plan_init" && ok(c))) {
+		return reply([
+			fauxText(`${ack}Here's the route: loops over a vector, index bounds, then strings. You'll write the code yourself in C++ cells, checked by tests.`),
+			call("plan_init", { mermaid: CPP_PLAN, codeCells: "cpp" }),
+		]);
+	}
+	const ex = calls.filter((c) => c.name === "cpp_exercise");
+	const reviews = calls.filter((c) => c.name === "cpp_review" && ok(c));
+	const quiz = calls.filter((c) => c.name === "quiz");
+	// A pass is judged first: does it do what was asked?
+	for (const c of ex.filter(ok)) {
+		const a = cppAnswer(teach, c);
+		if (a.correct !== true || !a.review || reviews.some((r) => r.arguments.exerciseCallId === c.id)) continue;
+		const accepted = !/std::reverse|\breverse\s*\(/.test(a.solution ?? "");
+		return reply([
+			call("cpp_review", {
+				exerciseCallId: c.id,
+				accepted,
+				reason: accepted ? "It does the work itself, as asked." : "It calls std::reverse; the task asked for your own loop.",
+			}),
+		]);
+	}
+	if (ex.length === 0) {
+		return reply([fauxText(`${ack}## Loops and bounds\n\nA vector of size n has indices 0 … n−1. A range-for (\`for (int x : v)\`) visits each element without any index to get wrong.\n\nYour turn:`), call("cpp_exercise", CPP_EX1)]);
+	}
+	if (ex.length === 1 && ok(ex[0])) {
+		// Deliberately a second code cell in a row: the tool must refuse it.
+		return reply([fauxText(`${ack}${cppVerdictText(teach, ex[0], reviews)}\n\nAnother one:`), call("cpp_exercise", CPP_EX2)]);
+	}
+	if (ex.length === 2 && resultFor(teach, ex[1].id)?.isError && quiz.length === 0) {
+		return reply([fauxText("Let's mix in a quick check before the next exercise."), call("quiz", CPP_QUIZ)]);
+	}
+	if (quiz.length === 1 && ok(quiz[0]) && ex.length === 2) {
+		return reply([fauxText(`${ack}${verdictLine(teach, quiz[0])}\n\nNow strings:`), call("cpp_exercise", CPP_EX2)]);
+	}
+	if (ex.length === 3 && ok(ex[2])) {
+		return reply([fauxText(`${ack}${cppVerdictText(teach, ex[2], reviews)}\n\n## Summary\n\n- Indices run from 0 to size()−1; the sanitizers catch the rest.\n- Hidden tests catch solutions fitted to the shown cases.\n- Passing the tests is not the same as doing what was asked.`)]);
+	}
+	return reply([fauxText(ack.trim() || "Noted.")]);
+}
+
+const CPP_PROBLEM = {
+	statement: "Implement `largest` so it returns the largest element of a non-empty vector.",
+	mode: "recall",
+	modelSolution: "Start from v[0], not 0: int m = v[0]; for (int x : v) if (x > m) m = x; return m;",
+	cpp: {
+		head: "#include <vector>\n\n// Return the largest element of a non-empty vector.",
+		starter: "int largest(const std::vector<int>& v) {\n  int m = 0;\n  for (int x : v) if (x > m) m = x;\n  return m;\n}",
+		tests: [
+			{ name: "mixed", code: "CHECK_EQ(largest({3, 1, 2}), 3);" },
+			{ name: "all negative", code: "CHECK_EQ(largest({-5, -2, -9}), -2);", hidden: true },
+		],
+		referenceSolution: "int largest(const std::vector<int>& v) {\n  int m = v[0];\n  for (int x : v) if (x > m) m = x;\n  return m;\n}",
+	},
+};
+
+function cppPractice(context, call, msgs) {
+	const ids = [...msgs.map((m) => textOf(m)).join("\n").matchAll(/\[(n_[a-z0-9]+)\]/g)].map((m) => m[1]);
+	const calls = toolCallsOf(msgs);
+	const problems = calls.filter((c) => c.name === "problem");
+	const posed = problems.filter((c) => resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
+	const concluded = calls.filter((c) => c.name === "conclude" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
+	const active = posed.length > concluded.length;
+	const last = msgs.at(-1);
+	const tailText = trailing(msgs).map((m) => textOf(m)).join("\n");
+	const target = ids.length ? { target: [ids[0]] } : {};
+	if (last?.role === "toolResult" && last.toolName === "conclude") {
+		return reply([fauxText("That's the committed solution above. Press **Next problem** when you're ready.")]);
+	}
+	if (last?.role === "toolResult" && last.toolName === "problem" && last.isError) {
+		return reply([fauxText("A plain one in between, then."), call("problem", { ...PROBLEMS[0], ...target })]);
+	}
+	if (active && tailText.includes(THINKING)) {
+		if (/Test verdict: passes/.test(tailText)) {
+			return reply([call("conclude", { outcome: "solved", verdict: "Every test passes, and it finds the largest element.", rung: null, missClass: null, retest: false })]);
+		}
+		if (/Test verdict: does not pass/.test(tailText)) {
+			return reply([fauxText("A test still fails — see your submission card. Hint: what if every element is negative?")]);
+		}
+		return reply([call("conclude", { outcome: "movedOn", verdict: "Read your trace.", rung: null, missClass: null, retest: false })]);
+	}
+	if (!active && (posed.length === 0 || tailText.includes(NEXT_PROBLEM))) {
+		return reply([fauxText(posed.length === 0 ? "A C++ one to start." : "Another C++ one."), call("problem", { ...CPP_PROBLEM, ...target })]);
+	}
+	return reply([fauxText(active ? "Edit the code, use Check, and submit when the tests pass." : "Press **Next problem** to continue.")]);
 }
 
 function unknownRole(context) {

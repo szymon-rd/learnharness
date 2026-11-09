@@ -38,6 +38,8 @@ import {
 } from "../../core/lean-cell.ts";
 import { checkTlaSolution, resolveTlaExercise, tlaExerciseProblems, type TlaChecker } from "../../core/tla-cell.ts";
 import { referenceProblems, tlaExerciseFields } from "./tla.ts";
+import { checkCppSolution, cppExerciseProblems, resolveCppExercise, type CppChecker } from "../../core/cpp-cell.ts";
+import { cppExerciseFields, cppReferenceProblems } from "./cpp.ts";
 
 
 /** The record-reading context the gates need (the plan-tools idiom). */
@@ -65,6 +67,8 @@ export interface PracticeToolContext {
 	 *  with the TLA+ service, and material from a teaching session whose plan
 	 *  was marked as a TLA+ topic. */
 	tla?: { check: TlaChecker; tlaSourced: (propositionIds: string[]) => boolean };
+	/** C++ problems (owner, 2026-11-09): the same rule with the C++ service. */
+	cpp?: { check: CppChecker; cppSourced: (propositionIds: string[]) => boolean };
 }
 
 /** TURN-SCOPED GATE STATE (the BKT incident, 2026-10-05): the gates used
@@ -156,13 +160,30 @@ const tlaProblemDescription =
 
 type TlaBlock = Static<typeof problemTlaBlock>;
 
+/** The C++ block of a problem (owner, 2026-11-09): the learner writes the
+ *  editable part of a C++ file in a C++ cell; each submission carries the
+ *  solution and the tests' verdict (every test, hidden ones included). */
+const problemCppBlock = Type.Object({
+	...cppExerciseFields,
+	learnerAsked: Type.Optional(Type.Boolean({ description: "True only when the learner asked for another code problem right after one." })),
+});
+
+const cppProblemDescription =
+	"Make this a C++ problem: the learner writes the part between the locked head (and tail) of a C++ file in a code cell, " +
+	"with live compiler errors and a Check button for the visible tests; each submission brings their solution and the " +
+	"verdict of every test, hidden ones included. On a pass, judge whether it does what the problem asked before counting " +
+	"it solved. Only for material from C++ sessions; never two code problems (Lean, TLA+ or C++) in a row unless they asked (learnerAsked).";
+
+type CppBlock = Static<typeof problemCppBlock>;
+
 /** The problem schema for the code-cell languages this turn may pose. */
-function problemSchemaFor(withLean: boolean, withTla: boolean) {
-	if (!withLean && !withTla) return problemInputObject;
+function problemSchemaFor(withLean: boolean, withTla: boolean, withCpp: boolean) {
+	if (!withLean && !withTla && !withCpp) return problemInputObject;
 	return Type.Object({
 		...problemInputObject.properties,
 		...(withLean ? { lean: problemInputWithLean.properties.lean } : {}),
 		...(withTla ? { tla: Type.Optional(Type.Object(problemTlaBlock.properties, { description: tlaProblemDescription })) } : {}),
+		...(withCpp ? { cpp: Type.Optional(Type.Object(problemCppBlock.properties, { description: cppProblemDescription })) } : {}),
 	});
 }
 
@@ -184,9 +205,9 @@ function previousProblemWasCode(messages: readonly LhMessage[], toolCallId: stri
 		const m = messages[i] as { role?: string; content?: unknown };
 		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
 		for (let j = m.content.length - 1; j >= 0; j--) {
-			const b = m.content[j] as { type?: string; id?: string; name?: string; arguments?: { lean?: unknown; tla?: unknown } };
+			const b = m.content[j] as { type?: string; id?: string; name?: string; arguments?: Record<string, unknown> };
 			if (b.type === "toolCall" && b.name === "problem" && b.id !== toolCallId) {
-				return (b.arguments?.lean !== undefined && b.arguments.lean !== null) || (b.arguments?.tla !== undefined && b.arguments.tla !== null);
+				return ["lean", "tla", "cpp"].some((k) => b.arguments?.[k] !== undefined && b.arguments[k] !== null);
 			}
 		}
 	}
@@ -250,6 +271,32 @@ async function tlaProblemProblems(
 	return [];
 }
 
+/** The C++ gates and the reference-solution check for one pose. */
+async function cppProblemProblems(
+	ctx: PracticeToolContext,
+	toolCallId: string,
+	block: CppBlock,
+	targets: string[],
+): Promise<string[]> {
+	const cpp = ctx.cpp!;
+	const messages = ctx.chatStore.getChat(ctx.chatId)?.messages ?? [];
+	const problems = cppExerciseProblems({ question: "problem", ...block });
+	if (!cpp.cppSourced([...sessionPickIds(messages), ...targets])) {
+		problems.push("C++ problems are only for material from C++ sessions; none of this session's propositions came from one. Pose it without `cpp`.");
+	}
+	if (previousProblemWasCode(messages, toolCallId) && block.learnerAsked !== true) {
+		problems.push("The previous problem was already a code problem. Mix them in: pose one without `cpp` first, unless the learner asked for another (then set cpp.learnerAsked: true).");
+	}
+	if (problems.length) return problems;
+	try {
+		const verdict = await checkCppSolution(cpp.check, resolveCppExercise({ question: "", ...block }), block.referenceSolution, "all");
+		if (!verdict.passed) return cppReferenceProblems("cpp.referenceSolution", verdict);
+	} catch (err) {
+		return [`The C++ checker is unavailable right now (${(err as Error).message}). Pose the problem without \`cpp\`.`];
+	}
+	return [];
+}
+
 export function problemTool(
 	gate: PracticeGate,
 	graphNodes?: PracticeToolContext["graphNodes"],
@@ -257,7 +304,8 @@ export function problemTool(
 ): AgentTool<typeof problemInputObject> {
 	const withLean = ctx?.lean !== undefined;
 	const withTla = ctx?.tla !== undefined;
-	const schema = problemSchemaFor(withLean, withTla);
+	const withCpp = ctx?.cpp !== undefined;
+	const schema = problemSchemaFor(withLean, withTla, withCpp);
 	return {
 		name: "problem",
 		label: "problem",
@@ -326,6 +374,13 @@ export function problemTool(
 				if (!withTla) return invalidInputResult("problem", ["TLA+ problems are off here (the Code cells setting or the TLA+ checker is unavailable). Pose it without `tla`."]);
 				const tlaProblems = await tlaProblemProblems(ctx!, toolCallId, tlaBlock, input.target ?? []);
 				if (tlaProblems.length) return invalidInputResult("problem", tlaProblems);
+			}
+			const cppBlock = (input as { cpp?: CppBlock }).cpp;
+			if (cppBlock) {
+				if (leanBlock || tlaBlock) return invalidInputResult("problem", ["A problem has at most one code cell: lean, tla or cpp."]);
+				if (!withCpp) return invalidInputResult("problem", ["C++ problems are off here (the Code cells setting or the C++ checker is unavailable). Pose it without `cpp`."]);
+				const cppProblems = await cppProblemProblems(ctx!, toolCallId, cppBlock, input.target ?? []);
+				if (cppProblems.length) return invalidInputResult("problem", cppProblems);
 			}
 			gate.problemActive = true;
 			return problemResult();

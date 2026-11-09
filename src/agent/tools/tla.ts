@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { invalidInputResult, questionResult, toToolResult } from "../tool-execute.ts";
+import { invalidInputResult, questionResult } from "../tool-execute.ts";
+import { codeReviewOf, codeReviewToolFor, type CodeReview } from "./code-review.ts";
 import {
 	checkTlaSolution,
 	MAX_TLA_WITNESSES,
@@ -185,58 +186,13 @@ export function tlaExerciseToolFor(
 
 // ─── tla_review ─────────────────────────────────────────────────────────
 
-export const tlaReviewInput = Type.Object({
-	exerciseCallId: Type.String({ description: "The tool call id of the tla_exercise whose answer you judge." }),
-	accepted: Type.Boolean({
-		description:
-			"true: the solution does what the task asked. false: it passes TLC but does not (e.g. it weakens the spec, models " +
-			"something else, or only satisfies the checks by accident) — this overrules the pass.",
-	}),
-	reason: Type.String({ minLength: 1, description: "One or two sentences for the learner: why it does or does not do what was asked." }),
-});
-
-/** The review recorded for a tla_exercise call, if any. */
-export interface TlaReview {
-	accepted: boolean;
-	reason: string;
-}
+export type TlaReview = CodeReview;
 
 /** Find the teacher's clean tla_review of `exerciseCallId` in a record. */
 export function tlaReviewOf(messages: readonly LhMessage[], exerciseCallId: string): TlaReview | null {
-	for (const m of messages) {
-		const r = m as { role?: string; toolName?: string; isError?: boolean; details?: { exerciseCallId?: unknown; accepted?: unknown; reason?: unknown } };
-		if (r.role !== "toolResult" || r.toolName !== TLA_REVIEW_TOOL || r.isError) continue;
-		if (r.details?.exerciseCallId === exerciseCallId && typeof r.details.accepted === "boolean") {
-			return { accepted: r.details.accepted, reason: typeof r.details.reason === "string" ? r.details.reason : "" };
-		}
-	}
-	return null;
+	return codeReviewOf(messages, exerciseCallId, TLA_REVIEW_TOOL);
 }
 
-export function tlaReviewToolFor(ctx: CodeCellToolContext): AgentTool<typeof tlaReviewInput> {
-	return {
-		name: TLA_REVIEW_TOOL,
-		label: TLA_REVIEW_TOOL,
-		description:
-			"Record your judgment of a TLA+ exercise answer that TLC passed: does the solution do what the task asked? " +
-			"accepted: false overrules TLC's pass — the answer then counts as not passed and the learner sees your reason. " +
-			"Call it once per passed answer, before your reply about it.",
-		parameters: tlaReviewInput,
-		executionMode: "sequential",
-		execute: async (_toolCallId, input) => {
-			const messages = ctx.chatStore.getChat(ctx.chatId)?.messages ?? [];
-			const answer = messages.find(
-				(m) => (m as { role?: string; toolCallId?: string; toolName?: string }).role === "toolResult" &&
-					(m as { toolCallId?: string }).toolCallId === input.exerciseCallId &&
-					(m as { toolName?: string }).toolName === TLA_EXERCISE_TOOL,
-			) as { isError?: boolean; details?: { dismissed?: boolean; tla?: { verdict?: { passed?: boolean } } } } | undefined;
-			const problems: string[] = [];
-			if (!answer || answer.isError) problems.push(`No answered tla_exercise with id ${input.exerciseCallId}.`);
-			else if (answer.details?.dismissed) problems.push("The learner skipped that exercise; there is nothing to review.");
-			else if (answer.details?.tla?.verdict?.passed !== true) problems.push("TLC did not pass that answer; it already counts as not passed.");
-			else if (tlaReviewOf(messages, input.exerciseCallId)) problems.push("That answer is already reviewed.");
-			if (problems.length) return invalidInputResult(TLA_REVIEW_TOOL, problems);
-			return toToolResult({ ok: true, exerciseCallId: input.exerciseCallId, accepted: input.accepted, reason: input.reason.trim() });
-		},
-	};
+export function tlaReviewToolFor(ctx: CodeCellToolContext) {
+	return codeReviewToolFor(ctx, { tool: TLA_REVIEW_TOOL, exerciseTool: TLA_EXERCISE_TOOL, detailKey: "tla", checker: "TLC", checks: "the checks" });
 }

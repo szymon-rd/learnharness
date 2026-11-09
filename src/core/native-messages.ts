@@ -43,6 +43,7 @@ import {
 	THINKING_LABEL,
 } from "./contracts/chat.ts";
 import { compactAnswerForModel, tlaAnswerForModel, type QuestionAnswerData } from "./question-core.ts";
+import { cppAnswerForModel } from "./cpp-cell.ts";
 import { activeCompactionOf, keptIndexFor } from "./compaction.ts";
 
 /** The hard-invariant wording for an aborted turn's unanswered calls —
@@ -292,7 +293,13 @@ export function newGraphContextMessage(picks: readonly GraphContextPick[], chain
  *  content label is the single "Your thinking"; `details` keeps the raw
  *  payload for the transcript card. One problem may carry many
  *  submissions. */
-export function newThinkingMessage(problemCallId: string, text: string, lean?: PracticeLeanSubmission, tla?: PracticeTlaSubmission): LhMarkerMessage {
+export function newThinkingMessage(
+	problemCallId: string,
+	text: string,
+	lean?: PracticeLeanSubmission,
+	tla?: PracticeTlaSubmission,
+	cpp?: PracticeCppSubmission,
+): LhMarkerMessage {
 	// A Lean problem's submission (owner, 2026-10-30) carries the proof and
 	// the server's verdict: the model reads them right under the thinking.
 	const parts = [text ? `${THINKING_LABEL}:\n${text}` : `${THINKING_LABEL}: (none)`];
@@ -306,13 +313,18 @@ export function newThinkingMessage(problemCallId: string, text: string, lean?: P
 		parts.push(`Submitted TLA+ solution:\n${tla.solution || "(empty)"}`);
 		parts.push(tla.verdict ? tlaVerdictLines(tla) : "TLC verdict: not checked (no verdict for this submission).");
 	}
+	// A C++ problem's submission (owner, 2026-11-09): the solution and the tests' verdict.
+	if (cpp) {
+		parts.push(`Submitted C++ solution:\n${cpp.solution || "(empty)"}`);
+		parts.push(cpp.verdict ? cppVerdictLines(cpp) : "Test verdict: not checked (no verdict for this submission).");
+	}
 	return {
 		id: newMessageId(),
 		role: "custom",
 		customType: "practice-thinking",
 		content: parts.join("\n\n"),
 		display: true,
-		details: { problemCallId, text, ...(lean ? { lean } : {}), ...(tla ? { tla } : {}) },
+		details: { problemCallId, text, ...(lean ? { lean } : {}), ...(tla ? { tla } : {}), ...(cpp ? { cpp } : {}) },
 		timestamp: Date.now(),
 	};
 }
@@ -344,6 +356,24 @@ function tlaVerdictLines(tla: PracticeTlaSubmission): string {
 	for (const e of (view.errors as { line?: number; message: string }[] | undefined) ?? []) lines.push(`- ${e.line !== undefined ? `line ${e.line}` : "error"}: ${e.message}`);
 	if (view.counterexample) lines.push("Counterexample:", ...(view.counterexample as string[]).map((l) => `  ${l}`));
 	if (view.unreachable) lines.push(`Not reachable: ${(view.unreachable as string[]).join("; ")}`);
+	if (view.review) lines.push(String(view.review));
+	return lines.join("\n");
+}
+
+/** A practice submission's C++ half: the solution and the server's verdict. */
+export interface PracticeCppSubmission {
+	solution: string;
+	verdict?: import("./cpp-cell.ts").CppVerdict;
+	summary?: string;
+}
+
+function cppVerdictLines(cpp: PracticeCppSubmission): string {
+	const view = cppAnswerForModel(cpp.solution, cpp.verdict!, cpp.summary ?? "", "practice");
+	const lines = [`Test verdict: ${cpp.verdict!.passed ? "passes" : "does not pass"} — ${cpp.summary ?? ""}`.trim()];
+	for (const e of (view.errors as { line?: number; message: string }[] | undefined) ?? []) lines.push(`- ${e.line !== undefined ? `line ${e.line}` : "error"}: ${e.message}`);
+	for (const t of (view.failedTests as { name: string; hidden?: boolean; message?: string; output?: string }[] | undefined) ?? []) {
+		lines.push(`- test "${t.name}"${t.hidden ? " (hidden)" : ""} fails: ${t.message ?? ""}`.trim());
+	}
 	if (view.review) lines.push(String(view.review));
 	return lines.join("\n");
 }
@@ -804,7 +834,7 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 	if (message.role === "toolResult") {
 		if (!(QUESTION_TOOLS as readonly string[]).includes(message.toolName) || message.isError || message.details == null || (message.details as { dismissed?: boolean }).dismissed) return "neutral";
 		const details = message.details as Partial<QuestionAnswerData>;
-		if (!["quiz", "ask", "explain", "lean", "tla"].includes(details.kind ?? "") || typeof details.questionText !== "string" || typeof details.dontKnow !== "boolean" || !Array.isArray(details.answers) || typeof details.answeredAt !== "string") return "unrecognizable";
+		if (!["quiz", "ask", "explain", "lean", "tla", "cpp"].includes(details.kind ?? "") || typeof details.questionText !== "string" || typeof details.dontKnow !== "boolean" || !Array.isArray(details.answers) || typeof details.answeredAt !== "string") return "unrecognizable";
 		const calls = history.flatMap((m) => m.role === "assistant" ? m.content.filter((b) => b.type === "toolCall" && b.id === message.toolCallId) : []);
 		return calls.length === 1 && calls[0]?.type === "toolCall" && calls[0].name === message.toolName ? "learner" : "unrecognizable";
 	}

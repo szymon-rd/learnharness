@@ -1,0 +1,88 @@
+{
+ "exercise": {
+  "question": "Return the sum of the elements.",
+  "head": "#include <vector>\n\n// int sum(const std::vector<int>& v);",
+  "tests": [
+   {
+    "name": "three numbers",
+    "code": "CHECK_EQ(sum({1, 2, 3}), 6);"
+   },
+   {
+    "name": "empty",
+    "code": "CHECK_EQ(sum({}), 0);"
+   },
+   {
+    "name": "negatives",
+    "code": "CHECK_EQ(sum({-5, 5, -1}), -1);",
+    "hidden": true
+   }
+  ]
+ },
+ "solution": "int sum(const std::vector<int>& v) {\n  int unused;\n  return 0;\n}",
+ "mode": "syntax",
+ "nonce": "fixturenonce",
+ "result": {
+  "ms": 152,
+  "compile": {
+   "ok": true,
+   "timedOut": false,
+   "diagnostics": [
+    {
+     "kind": "warning",
+     "message": "unused variable 'unused'",
+     "option": "-Wunused-variable",
+     "option_url": "https://gcc.gnu.org/onlinedocs/gcc-14.2.0/gcc/Warning-Options.html#index-Wno-unused-variable",
+     "children": [],
+     "column-origin": 1,
+     "locations": [
+      {
+       "caret": {
+        "file": "cell.cpp",
+        "line": 6,
+        "display-column": 7,
+        "byte-column": 7,
+        "column": 7
+       },
+       "finish": {
+        "file": "cell.cpp",
+        "line": 6,
+        "display-column": 12,
+        "byte-column": 12,
+        "column": 12
+       }
+      }
+     ],
+     "escape-source": false
+    },
+    {
+     "kind": "warning",
+     "message": "unused parameter 'v'",
+     "option": "-Wunused-parameter",
+     "option_url": "https://gcc.gnu.org/onlinedocs/gcc-14.2.0/gcc/Warning-Options.html#index-Wno-unused-parameter",
+     "children": [],
+     "column-origin": 1,
+     "locations": [
+      {
+       "caret": {
+        "file": "cell.cpp",
+        "line": 5,
+        "display-column": 33,
+        "byte-column": 33,
+        "column": 33
+       },
+       "start": {
+        "file": "cell.cpp",
+        "line": 5,
+        "display-column": 9,
+        "byte-column": 9,
+        "column": 9
+       }
+      }
+     ],
+     "escape-source": false
+    }
+   ],
+   "other": ""
+  }
+ }
+}

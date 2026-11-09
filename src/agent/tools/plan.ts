@@ -67,6 +67,7 @@ function planInitInputWithCodeCells(languages: readonly CodeCellLanguage[]) {
 	const what: Record<CodeCellLanguage, string> = {
 		lean: '"lean" when this session is about Lean itself — writing Lean programs or proving theorems in Lean (lean_exercise)',
 		tla: '"tla" when this session is about TLA+ or PlusCal itself — writing specifications and model checking them with TLC (tla_exercise)',
+		cpp: '"cpp" when this session is about programming in C++ itself — writing C++ code (cpp_exercise)',
 	};
 	return Type.Object({
 		mermaid: planInitInput.properties.mermaid,

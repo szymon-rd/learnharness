@@ -50,3 +50,5 @@ export { PAIR_PATH, REMOTE_COOKIE, accessCodeMatches, remoteAccessMode, remoteCo
 export { leanServiceUrl, leanChecker } from "./lean-service.ts";
 export { tlaServiceUrl, tlaChecker } from "./tla-service.ts";
 export { tlaCellCheckResponse } from "./tla-answer.ts";
+export { cppServiceUrl, cppChecker } from "./cpp-service.ts";
+export { cppCellCheckResponse } from "./cpp-answer.ts";

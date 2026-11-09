@@ -28,6 +28,8 @@ import { leanExerciseToolFor } from "./tools/lean.ts";
 import type { LeanChecker } from "../core/lean-cell.ts";
 import { tlaExerciseToolFor, tlaReviewToolFor } from "./tools/tla.ts";
 import type { TlaChecker } from "../core/tla-cell.ts";
+import { cppExerciseToolFor, cppReviewToolFor } from "./tools/cpp.ts";
+import type { CppChecker } from "../core/cpp-cell.ts";
 import type { GraphStore } from "../core/ports.ts";
 
 export { jobTools };
@@ -413,6 +415,10 @@ export interface TeacherToolContext extends PlanToolContext {
 	 *  service. Present = tla_exercise and tla_review are registered and
 	 *  plan_init's codeCells offers "tla". */
 	tla?: TlaChecker;
+	/** C++ code cells (owner, 2026-11-09): the same gate with the C++ service.
+	 *  Present = cpp_exercise and cpp_review are registered and plan_init's
+	 *  codeCells offers "cpp". */
+	cpp?: CppChecker;
 }
 
 /**
@@ -470,7 +476,7 @@ export function createTeacherTools(
 			ls: lsTool,
 			find: findTool,
 			grep: grepTool,
-			...planTools(ctx, { codeCells: [...(ctx.lean ? (["lean"] as const) : []), ...(ctx.tla ? (["tla"] as const) : [])] }),
+			...planTools(ctx, { codeCells: [...(ctx.lean ? (["lean"] as const) : []), ...(ctx.tla ? (["tla"] as const) : []), ...(ctx.cpp ? (["cpp"] as const) : [])] }),
 			...(ctx.lean
 				? { lean_exercise: leanExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, lean: ctx.lean }, (nodeId) => nodeIdProblem(ctx, nodeId)) }
 				: {}),
@@ -478,6 +484,12 @@ export function createTeacherTools(
 				? {
 						tla_exercise: tlaExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, tla: ctx.tla }, (nodeId) => nodeIdProblem(ctx, nodeId)),
 						tla_review: tlaReviewToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore }),
+					}
+				: {}),
+			...(ctx.cpp
+				? {
+						cpp_exercise: cppExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, cpp: ctx.cpp }, (nodeId) => nodeIdProblem(ctx, nodeId)),
+						cpp_review: cppReviewToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore }),
 					}
 				: {}),
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),

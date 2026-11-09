@@ -11,14 +11,16 @@ import { ThinkingChip } from "@/components/thinking-chip";
 import { cn } from "@/lib/utils";
 import { LeanCell, type LeanCellStatus } from "@/components/lean/lean-cell";
 import { parseLeanExerciseInput, TaskFold } from "@/components/lean/lean-dock";
-import { resolveLeanExercise, tlaExerciseFromInput } from "@/src/core";
+import { cppExerciseFromInput, resolveLeanExercise, tlaExerciseFromInput } from "@/src/core";
 import { TlaCell, type TlaCellStatus } from "@/components/tla/tla-cell";
+import { CppCell, type CppCellStatus } from "@/components/cpp/cpp-cell";
 
 /** What a code problem's submission carries besides the thinking: the
  *  Lean proof or the TLA+ solution (the server adds the verdict). */
 export interface PracticeCodeSubmission {
 	proof?: string;
 	solution?: string;
+	cppSolution?: string;
 }
 
 /**
@@ -46,7 +48,7 @@ export interface PracticeDockProps {
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
 	 *  mode badge would edge toward announcing the target; dropped). */
-	input: { statement: string; lean?: unknown; tla?: unknown };
+	input: { statement: string; lean?: unknown; tla?: unknown; cpp?: unknown };
 	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
 	chatId?: string;
 	/** Collapse state, owned by the DockOverlay. */
@@ -84,7 +86,11 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 	const tla = useMemo(() => (lean || !input.tla ? null : tlaExerciseFromInput(input.tla, input.statement)), [lean, input.tla, input.statement]);
 	const solutionRef = useRef(tla?.starter ?? "");
 	const [tlaStatus, setTlaStatus] = useState<TlaCellStatus>("parsing");
-	const code = lean !== null || tla !== null;
+	// A C++ problem (owner, 2026-11-09): the C++ cell; every submission runs every test.
+	const cpp = useMemo(() => (lean || tla || !input.cpp ? null : cppExerciseFromInput(input.cpp, input.statement)), [lean, tla, input.cpp, input.statement]);
+	const cppSolutionRef = useRef(cpp?.starter ?? "");
+	const [cppStatus, setCppStatus] = useState<CppCellStatus>("compiling");
+	const code = lean !== null || tla !== null || cpp !== null;
 	// Phones (owner, 2026-11-01): "Your thinking" starts as a chip beside
 	// Submit; dictation fills it unseen, a tap expands it.
 	const phone = useIsPhone();
@@ -115,6 +121,7 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 		setThinking("");
 		if (lean) onSubmit(text, { proof: proofRef.current });
 		else if (tla) onSubmit(text, { solution: solutionRef.current });
+		else if (cpp) onSubmit(text, { cppSolution: cppSolutionRef.current });
 		else onSubmit(text);
 	};
 
@@ -191,6 +198,24 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 						/>
 					</div>
 				)}
+				{cpp && (
+					<div className={fold ? undefined : "mt-3"}>
+						<CppCell
+							exercise={cpp}
+							chatId={chatId}
+							toolCallId={problemCallId}
+							// The dock unmounts the cell while collapsed: restore the
+							// learner's last text, not the starter.
+							initialSolution={cppSolutionRef.current}
+							onSolutionChange={(s) => {
+								cppSolutionRef.current = s;
+							}}
+							onStatus={setCppStatus}
+							onEditingChange={setEditing}
+							foldHead={fold}
+						/>
+					</div>
+				)}
 			</div>
 
 			{/* The learner's half: Enter SENDS (owner round 2, 2026-10-05);
@@ -256,6 +281,10 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 						) : lean ? (
 							<span className={cn(leanStatus === "passes" && "text-emerald-700 dark:text-emerald-400")}>
 								{leanStatus === "passes" ? "Lean accepts this proof." : "Submit sends your proof and thinking."}
+							</span>
+						) : cpp ? (
+							<span className={cn(cppStatus === "compiles" && "text-emerald-700 dark:text-emerald-400")}>
+								{cppStatus === "compiles" ? "It compiles. Check runs the shown tests." : "Submit sends your code and thinking."}
 							</span>
 						) : tla ? (
 							<span className={cn(tlaStatus === "parses" && "text-emerald-700 dark:text-emerald-400")}>

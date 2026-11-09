@@ -7,6 +7,7 @@ This puts the LearnHarness server on a Linux server you rent, so the Android app
                         on your VPS     │                                         sessions, graph, keys
                                         └─/lean/lsp─▶ Lean + Mathlib (code cells, no internet)
                                 LearnHarness ──internal──▶ TLA+ tools: SANY, TLC, PlusCal (code cells, no internet)
+                                LearnHarness ──internal──▶ C++: g++ with sanitizers (code cells, no internet)
 ```
 
 Every page and API call needs the access code, which a device enters once.
@@ -82,7 +83,7 @@ The `lean` service runs Lean 4 with Mathlib for code cells: Lean exercises the t
 - When you submit, the server checks your proof against the exact statement: no errors, no `sorry`, and only the standard axioms (no `native_decide`). The check catches mistakes; a proof written to fool it on purpose is out of scope.
 - Lean runs in its own container with no internet access, as a normal user without extra privileges, with a memory cap (`LEAN_MEM_LIMIT`, default `3g`). Mathlib's compiled files are about 6 GB and must fit in memory: below that cap Lean re-reads them from disk on every check and checks time out. On an 8 GB server set `LEAN_MEM_LIMIT=6g` in `deploy/.env`. One language server runs at a time (`LEAN_MAX_SESSIONS`, default 1; set 2 on an 8 GB server for two open cells). Idle servers stop after 10 minutes.
 - When the container starts it loads Mathlib once (about 20 s to a minute; `docker compose logs lean` shows "Mathlib warm"). Checks that arrive meanwhile wait for it, and the transcript says "Lean server starting".
-- To leave Lean out on a small server: `docker compose up -d --build learnharness caddy tla`. The setting then offers only TLA+.
+- To leave Lean out on a small server: `docker compose up -d --build learnharness caddy tla cpp`. The setting then offers only TLA+ and C++.
 
 ## TLA+ code cells
 
@@ -93,6 +94,15 @@ The `tla` service runs the TLA+ tools (SANY, the TLC model checker and the PlusC
 - A submission passes when TLC explores the whole state space with no violated invariant or property, no deadlock (when the model checks it), and every "must be reachable" state is reached (so a spec that does nothing cannot pass). The tutor then judges whether the solution does what the task asked and can overrule a pass; the card shows its reason.
 - The container has no internet access, runs as a normal user without extra privileges on a read-only filesystem, and has a memory cap (`TLA_MEM_LIMIT`, default `1g`; TLC's Java heap `TLA_TLC_HEAP`, default `640m`). TLC gets 60 s per check (`TLA_CHECK_TIMEOUT_SECONDS`) for the model and the witnesses together; exercises keep their models small. Caddy does not route it: only the app calls it.
 - On an 8 GB server with Lean at `LEAN_MEM_LIMIT=6g`, the TLA+ container's 1 GB cap leaves little for the app; if the server swaps or a container is killed for memory, lower `TLA_MEM_LIMIT` to `768m` (and `TLA_TLC_HEAP` to `512m`).
+
+## C++ code cells
+
+The `cpp` service compiles and runs C++ exercises (g++ 14, C++20, with AddressSanitizer and UBSan). The same **Code cells: Mixed in** setting turns them on; the tutor uses them only in sessions whose plan is marked as a C++ topic, and never two code cells in a row unless you ask. Practice sessions get C++ problems for material from C++ sessions.
+
+- In the cell, the top of the file (`#include`s, given code, the signature to implement) is locked; you write the part below it (some exercises also lock a part after yours).
+- While you type, the server compiles the file and marks errors and warnings. The tutor's visible tests are listed under the cell; **Check** compiles and runs them without submitting. Hidden tests are listed by name only.
+- A submission passes when it compiles and every test passes, hidden ones included: no failed check, no memory error or undefined behavior caught by the sanitizers, no crash, and each test within 5 s (`CPP_TEST_TIMEOUT_SECONDS`). Warnings never fail. The tutor then judges whether the solution does what the task asked and can overrule a pass.
+- Learner code runs in this container: no internet, a normal user without extra privileges, a read-only filesystem except `/tmp`, a memory cap (`CPP_MEM_LIMIT`, default `1g`) and a process cap (a fork bomb stops at the limit and is cleaned up after the test). Malicious code can at worst crash the container, which restarts. Caddy does not route it: only the app calls it.
 
 ## Day to day
 
@@ -140,4 +150,5 @@ From then on the server copy and the desktop copy are separate. They do not sync
 - **"This device is not paired"** in API errors means the browser lost the cookie. Open `https://<LH_HOST>/pair` and enter the code again.
 - **A code cell says "Lean offline"** or the badge never leaves "Starting Lean…": check `docker compose ps lean` and `docker compose logs lean`. If every check times out after 120 s, Lean's memory cap is below Mathlib's size (see above). If the container was killed for memory, raise `LEAN_MEM_LIMIT` in `deploy/.env` (and the server's RAM).
 - **A TLA+ cell says "Checker offline"**: check `docker compose ps tla` and `docker compose logs tla`. "TLC ran out of time" means the model's state space is too large for the time budget.
+- **A C++ cell says "Checker offline"**: check `docker compose ps cpp` and `docker compose logs cpp`.
 - **The build runs out of memory** on a 1 GB server. Add swap (`fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`) or use a bigger plan.

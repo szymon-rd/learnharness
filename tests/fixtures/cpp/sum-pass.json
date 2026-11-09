@@ -1,0 +1,62 @@
+{
+ "exercise": {
+  "question": "Return the sum of the elements.",
+  "head": "#include <vector>\n\n// int sum(const std::vector<int>& v);",
+  "tests": [
+   {
+    "name": "three numbers",
+    "code": "CHECK_EQ(sum({1, 2, 3}), 6);"
+   },
+   {
+    "name": "empty",
+    "code": "CHECK_EQ(sum({}), 0);"
+   },
+   {
+    "name": "negatives",
+    "code": "CHECK_EQ(sum({-5, 5, -1}), -1);",
+    "hidden": true
+   }
+  ]
+ },
+ "solution": "int sum(const std::vector<int>& v) {\n  int s = 0;\n  for (int x : v) s += x;\n  return s;\n}",
+ "mode": "all",
+ "nonce": "fixturenonce",
+ "result": {
+  "ms": 727,
+  "compile": {
+   "ok": true,
+   "timedOut": false,
+   "diagnostics": [],
+   "other": ""
+  },
+  "runs": [
+   {
+    "test": 1,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "ms": 7,
+    "stdout": "\n@@LH_PASS fixturenonce\n",
+    "stderr": ""
+   },
+   {
+    "test": 2,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "ms": 5,
+    "stdout": "\n@@LH_PASS fixturenonce\n",
+    "stderr": ""
+   },
+   {
+    "test": 3,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "ms": 12,
+    "stdout": "\n@@LH_PASS fixturenonce\n",
+    "stderr": ""
+   }
+  ]
+ }
+}

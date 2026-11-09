@@ -1,5 +1,5 @@
 # LearnHarness on your own server: the app, Caddy for automatic HTTPS, and
-# Lean + Mathlib and the TLA+ tools for code cells.
+# Lean + Mathlib, the TLA+ tools and C++ for code cells.
 #   cp .env.example .env    # set LH_HOST
 #   docker compose up -d --build
 # See docs/deploy-vps.md.
@@ -13,11 +13,12 @@ services:
       LH_PUBLIC_URL: https://${LH_HOST:?Set LH_HOST in deploy/.env (see .env.example)}
       LH_LEAN_URL: http://lean:3300
       LH_TLA_URL: http://tla:3400
+      LH_CPP_URL: http://cpp:3500
     volumes:
       - learnharness-data:/data
     # Chromium (interactive demos) needs more shared memory than Docker's 64 MB default.
     shm_size: 1gb
-    networks: [default, lean, tla]
+    networks: [default, lean, tla, cpp]
 
   # Lean 4 + Mathlib for code cells (deploy/lean). No internet access (the
   # "lean" network is internal), an unprivileged user, no capabilities and a
@@ -61,6 +62,27 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
+  # C++ for code cells (deploy/cpp): g++ with AddressSanitizer/UBSan behind
+  # a small bridge. Learner code runs here, so: no internet (the "cpp"
+  # network is internal), an unprivileged user, no capabilities, a read-only
+  # filesystem except /tmp, and memory and process caps. Only the app talks
+  # to it (Caddy does not route it).
+  cpp:
+    image: learnharness-cpp:${CPP_TAG:-local}
+    build: ./cpp
+    restart: unless-stopped
+    environment:
+      CPP_TEST_TIMEOUT_SECONDS: ${CPP_TEST_TIMEOUT_SECONDS:-5}
+    networks: [cpp]
+    read_only: true
+    tmpfs:
+      # exec: the compiled tests run from here.
+      - /tmp:size=256m,exec
+    mem_limit: ${CPP_MEM_LIMIT:-1g}
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
   caddy:
     image: caddy:2.10
     restart: unless-stopped
@@ -83,6 +105,8 @@ networks:
   lean:
     internal: true
   tla:
+    internal: true
+  cpp:
     internal: true
 
 volumes:

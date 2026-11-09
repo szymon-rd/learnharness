@@ -1,46 +1,11 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { useContext, useState } from "react";
+import { CodeReviewsContext } from "@/components/code-reviews";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { ThinkingBlock } from "@/components/thinking-block";
 import type { QuestionAnswerData } from "@/src/core";
 import { TlaVerdictView } from "./tla-verdict";
-
-/** The teacher's reviews of TLA+ answers (tla_review), keyed by the
- *  exercise's tool call id. The transcript provides it; the answered card
- *  reads its own. */
-export interface TlaReviewView {
-	accepted: boolean;
-	reason: string;
-}
-export const TlaReviewsContext = createContext<ReadonlyMap<string, TlaReviewView>>(new Map());
-
-/** Collect tla_review results from the transcript's UI parts. */
-export function collectTlaReviews(messages: readonly { parts?: readonly unknown[] }[]): Map<string, TlaReviewView> {
-	const out = new Map<string, TlaReviewView>();
-	for (const m of messages) {
-		for (const p of m.parts ?? []) {
-			const part = p as { type?: string; state?: string; output?: { ok?: unknown; exerciseCallId?: unknown; accepted?: unknown; reason?: unknown } };
-			if (part.type !== "tool-tla_review" || part.state !== "output-available") continue;
-			const o = part.output;
-			if (o?.ok === true && typeof o.exerciseCallId === "string" && typeof o.accepted === "boolean") {
-				out.set(o.exerciseCallId, { accepted: o.accepted, reason: typeof o.reason === "string" ? o.reason : "" });
-			}
-		}
-	}
-	return out;
-}
-
-/** True when two review maps hold the same reviews (keeps the context
- *  value stable across stream renders). */
-export function sameTlaReviews(a: ReadonlyMap<string, TlaReviewView>, b: ReadonlyMap<string, TlaReviewView>): boolean {
-	if (a.size !== b.size) return false;
-	for (const [k, v] of a) {
-		const w = b.get(k);
-		if (!w || w.accepted !== v.accepted || w.reason !== v.reason) return false;
-	}
-	return true;
-}
 
 /**
  * An answered TLA+ code cell: the submitted solution, TLC's verdict (errors,
@@ -50,7 +15,7 @@ export function sameTlaReviews(a: ReadonlyMap<string, TlaReviewView>, b: Readonl
  */
 export function TlaAnsweredCard({ answer, toolCallId }: { answer: QuestionAnswerData; toolCallId?: string }) {
 	const [referenceOpen, setReferenceOpen] = useState(false);
-	const reviews = useContext(TlaReviewsContext);
+	const reviews = useContext(CodeReviewsContext);
 	const review = toolCallId ? reviews.get(toolCallId) : undefined;
 	const tla = answer.tla;
 	const solution = tla?.solution ?? answer.text ?? "";

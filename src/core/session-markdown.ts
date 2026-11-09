@@ -142,12 +142,27 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		return { heading: "TLA+ exercise", body };
 	}
 
-	if (result.toolName === "tla_review") {
+	if (result.toolName === "cpp_exercise") {
+		// A C++ code cell (owner, 2026-11-09): the task, the solution and the tests' verdict.
+		const cpp = (result.details as { cpp?: { solution?: string; summary?: string; verdict?: { passed?: boolean } } } | undefined)?.cpp;
+		const question = typeof out?.questionText === "string" && out.questionText ? out.questionText : "(no question text)";
+		const body = [`**Q:** ${question}`];
+		if (out?.dismissed === true) body.push("The learner skipped this exercise.");
+		else if (cpp) {
+			body.push(`${cpp.verdict?.passed ? "The learner's solution passed the tests." : "The learner's solution did not pass the tests."}${cpp.summary ? ` ${cpp.summary}` : ""}`);
+			if (typeof cpp.solution === "string" && cpp.solution.trim()) body.push("```cpp\n" + cpp.solution.replace(/\s+$/, "") + "\n```");
+		}
+		const thinking = (result.details as { thinking?: string } | undefined)?.thinking;
+		if (typeof thinking === "string" && thinking) body.push(`*(the learner's thinking: ${thinking})*`);
+		return { heading: "C++ exercise", body };
+	}
+
+	if (result.toolName === "tla_review" || result.toolName === "cpp_review") {
 		const d = result.details as { accepted?: boolean; reason?: string } | undefined;
 		if (typeof d?.accepted !== "boolean") return { heading: "Tutor's review", body: [] };
 		return {
 			heading: "Tutor's review",
-			body: [`${d.accepted ? "The tutor accepted the solution as doing what was asked." : "The tutor did not accept the solution: it passes TLC but does not do what was asked."}${d.reason ? ` ${d.reason}` : ""}`],
+			body: [`${d.accepted ? "The tutor accepted the solution as doing what was asked." : `The tutor did not accept the solution: it passes ${result.toolName === "cpp_review" ? "the tests" : "TLC"} but does not do what was asked.`}${d.reason ? ` ${d.reason}` : ""}`],
 		};
 	}
 

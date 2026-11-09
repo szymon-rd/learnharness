@@ -1,0 +1,62 @@
+{
+ "exercise": {
+  "question": "Return the sum of the elements.",
+  "head": "#include <vector>\n\n// int sum(const std::vector<int>& v);",
+  "tests": [
+   {
+    "name": "three numbers",
+    "code": "CHECK_EQ(sum({1, 2, 3}), 6);"
+   },
+   {
+    "name": "empty",
+    "code": "CHECK_EQ(sum({}), 0);"
+   },
+   {
+    "name": "negatives",
+    "code": "CHECK_EQ(sum({-5, 5, -1}), -1);",
+    "hidden": true
+   }
+  ]
+ },
+ "solution": "int sum(const std::vector<int>& v) {\n  int s = 0;\n  for (std::size_t i = 0; i <= v.size(); i++) s += v[i];\n  return s;\n}",
+ "mode": "all",
+ "nonce": "fixturenonce",
+ "result": {
+  "ms": 800,
+  "compile": {
+   "ok": true,
+   "timedOut": false,
+   "diagnostics": [],
+   "other": ""
+  },
+  "runs": [
+   {
+    "test": 1,
+    "exitCode": 86,
+    "signal": null,
+    "timedOut": false,
+    "ms": 19,
+    "stdout": "",
+    "stderr": "=================================================================\n==111==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x0 at pc 0x0 bp 0x0 sp 0x0\nREAD of size 4 at 0x0 thread T0\n    #0 0x0 in sum(std::vector<int, std::allocator<int> > const&) /tmp/cpp-X/cell.cpp:7\n    #1 0x0 in lh_test_1 /tmp/cpp-X/test 1:1\n    #2 0x0 in main /tmp/cpp-X/harness:4\n    #3 0x0  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n    #4 0x0 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29d64) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n    #5 0x0 in _start (/tmp/cpp-X/tests+0x11350) (BuildId: 9ecfc224476eb81a738dc7f8f6d96ba3e4ca3f0e)\n\n0x0 is located 0 bytes after 12-byte region [0x0,0x0)\nallocated by thread T0 here:\n    #0 0x0 in operator new(unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:95\n    #1 0x0 in std::__new_allocator<int>::allocate(unsigned long, void const*) /usr/include/c++/14/bits/new_allocator.h:151\n    #2 0x0 in std::allocator<int>::allocate(unsigned long) /usr/include/c++/14/bits/allocator.h:196\n    #3 0x0 in std::allocator_traits<std::allocator<int> >::allocate(std::allocator<int>&, unsigned long) /usr/include/c++/14/bits/alloc_traits.h:515\n    #4 0x0 in std::_Vector_base<int, std::allocator<int> >::_M_allocate(unsigned long) /usr/include/c++/14/bits/stl_vector.h:380\n    #5 0x0 in void std::vector<int, std::allocator<int> >::_M_range_initialize<int const*>(int const*, int const*, std::forward_iterator_tag) /usr/include/c++/14/bits/stl_vector.h:1694\n    #6 0x0 in std::vector<int, std::allocator<int> >::vector(std::initializer_list<int>, std::allocator<int> const&) /usr/include/c++/14/bits/stl_vector.h:682\n    #7 0x0 in lh_test_1 /tmp/cpp-X/test 1:1\n    #8 0x0 in main /tmp/cpp-X/harness:4\n    #9 0x0  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n\nSUMMARY: AddressSanitizer: heap-buffer-overflow /tmp/cpp-X/cell.cpp:7 in sum(std::vector<int, std::allocator<int> > const&)\nShadow bytes around the buggy address:\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n=>0x0: fa fa 00[04]fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\nShadow byte legend (one shadow byte represents 8 application bytes):\n  Addressable:           00\n  Partially addressable: 01 02 03 04 05 06 07 \n  Heap left redzone:       fa\n  Freed heap region:       fd\n  Stack left redzone:      f1\n  Stack mid redzone:       f2\n  Stack right redzone:     f3\n  Stack after return:      f5\n  Stack use after scope:   f8\n  Global redzone:          f9\n  Global init order:       f6\n  Poisoned by user:        f7\n  Container overflow:      fc\n  Array cookie:            ac\n  Intra object redzone:    bb\n  ASan internal:           fe\n  Left alloca redzone:     ca\n  Right alloca redzone:    cb\n==111==ABORTING\n"
+   },
+   {
+    "test": 2,
+    "exitCode": 87,
+    "signal": null,
+    "timedOut": false,
+    "ms": 45,
+    "stdout": "",
+    "stderr": "/usr/include/c++/14/bits/stl_vector.h:1150:34: runtime error: reference binding to null pointer of type 'const value_type'\n    #0 0x0 in std::vector<int, std::allocator<int> >::operator[](unsigned long) const /usr/include/c++/14/bits/stl_vector.h:1150\n    #1 0x0 in sum(std::vector<int, std::allocator<int> > const&) /tmp/cpp-X/cell.cpp:7\n    #2 0x0 in lh_test_2 /tmp/cpp-X/test 2:1\n    #3 0x0 in main /tmp/cpp-X/harness:5\n    #4 0x0  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n    #5 0x0 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29d64) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n    #6 0x0 in _start (/tmp/cpp-X/tests+0x11350) (BuildId: 9ecfc224476eb81a738dc7f8f6d96ba3e4ca3f0e)\n\n"
+   },
+   {
+    "test": 3,
+    "exitCode": 86,
+    "signal": null,
+    "timedOut": false,
+    "ms": 35,
+    "stdout": "",
+    "stderr": "=================================================================\n==113==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x0 at pc 0x0 bp 0x0 sp 0x0\nREAD of size 4 at 0x0 thread T0\n    #0 0x0 in sum(std::vector<int, std::allocator<int> > const&) /tmp/cpp-X/cell.cpp:7\n    #1 0x0 in lh_test_3 /tmp/cpp-X/test 3:1\n    #2 0x0 in main /tmp/cpp-X/harness:6\n    #3 0x0  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n    #4 0x0 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29d64) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n    #5 0x0 in _start (/tmp/cpp-X/tests+0x11350) (BuildId: 9ecfc224476eb81a738dc7f8f6d96ba3e4ca3f0e)\n\n0x0 is located 0 bytes after 12-byte region [0x0,0x0)\nallocated by thread T0 here:\n    #0 0x0 in operator new(unsigned long) ../../../../src/libsanitizer/asan/asan_new_delete.cpp:95\n    #1 0x0 in std::__new_allocator<int>::allocate(unsigned long, void const*) /usr/include/c++/14/bits/new_allocator.h:151\n    #2 0x0 in std::allocator<int>::allocate(unsigned long) /usr/include/c++/14/bits/allocator.h:196\n    #3 0x0 in std::allocator_traits<std::allocator<int> >::allocate(std::allocator<int>&, unsigned long) /usr/include/c++/14/bits/alloc_traits.h:515\n    #4 0x0 in std::_Vector_base<int, std::allocator<int> >::_M_allocate(unsigned long) /usr/include/c++/14/bits/stl_vector.h:380\n    #5 0x0 in void std::vector<int, std::allocator<int> >::_M_range_initialize<int const*>(int const*, int const*, std::forward_iterator_tag) /usr/include/c++/14/bits/stl_vector.h:1694\n    #6 0x0 in std::vector<int, std::allocator<int> >::vector(std::initializer_list<int>, std::allocator<int> const&) /usr/include/c++/14/bits/stl_vector.h:682\n    #7 0x0 in lh_test_3 /tmp/cpp-X/test 3:1\n    #8 0x0 in main /tmp/cpp-X/harness:6\n    #9 0x0  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n\nSUMMARY: AddressSanitizer: heap-buffer-overflow /tmp/cpp-X/cell.cpp:7 in sum(std::vector<int, std::allocator<int> > const&)\nShadow bytes around the buggy address:\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n  0x0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00\n=>0x0: fa fa 00[04]fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\n  0x0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa\nShadow byte legend (one shadow byte represents 8 application bytes):\n  Addressable:           00\n  Partially addressable: 01 02 03 04 05 06 07 \n  Heap left redzone:       fa\n  Freed heap region:       fd\n  Stack left redzone:      f1\n  Stack mid redzone:       f2\n  Stack right redzone:     f3\n  Stack after return:      f5\n  Stack use after scope:   f8\n  Global redzone:          f9\n  Global init order:       f6\n  Poisoned by user:        f7\n  Container overflow:      fc\n  Array cookie:            ac\n  Intra object redzone:    bb\n  ASan internal:           fe\n  Left alloca redzone:     ca\n  Right alloca redzone:    cb\n==113==ABORTING\n"
+   }
+  ]
+ }
+}

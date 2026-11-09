@@ -323,6 +323,14 @@ export function AgentSection({
 			.then(setLean)
 			.catch(() => setLean({ available: false, reason: "Could not reach the server." }));
 	}, []);
+	/** C++ for code cells (/api/cpp/status): null while loading. */
+	const [cpp, setCpp] = useState<{ available: boolean; reason?: string } | null>(null);
+	useEffect(() => {
+		fetch("/api/cpp/status")
+			.then((r) => r.json())
+			.then(setCpp)
+			.catch(() => setCpp({ available: false, reason: "Could not reach the server." }));
+	}, []);
 	/** TLA+ for code cells (/api/tla/status): null while loading. */
 	const [tla, setTla] = useState<{ available: boolean; reason?: string } | null>(null);
 	useEffect(() => {
@@ -786,14 +794,15 @@ export function AgentSection({
 				    mark). Greyed only when neither service is available. */}
 				{(() => {
 					const on = agent?.codeCells?.enabled === true;
-					const unavailable = lean !== null && tla !== null && !lean.available && !tla.available;
-					const languages = [lean?.available ? "Lean" : null, tla?.available ? "TLA+" : null].filter(Boolean).join(" or ") || "Lean or TLA+";
+					const unavailable = lean !== null && tla !== null && cpp !== null && !lean.available && !tla.available && !cpp.available;
+					const available = [lean?.available ? "Lean" : null, tla?.available ? "TLA+" : null, cpp?.available ? "C++" : null].filter((l): l is string => l !== null);
+					const languages = available.length ? available.join(", ").replace(/, ([^,]*)$/, " or $1") : "Lean, TLA+ or C++";
 					return (
 						<SettingsRow
 							label="Code cells"
 							hint={
 								unavailable
-									? "Neither Lean nor TLA+ is available on this server."
+									? "No code-cell language (Lean, TLA+, C++) is available on this server."
 									: `${languages} exercises among the checks, only when a session is about that language`
 							}
 							testid="code-cells-row"

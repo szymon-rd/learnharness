@@ -88,3 +88,6 @@ export * from "./lean-abbreviations.ts";
 // TLA+ code cells (owner, 2026-11-05): the cell layout, the TLC model and
 // the verdict. Pure, browser-safe.
 export * from "./tla-cell.ts";
+// C++ code cells (owner, 2026-11-09): the cell layout, the test program and
+// the verdict. Pure, browser-safe.
+export * from "./cpp-cell.ts";

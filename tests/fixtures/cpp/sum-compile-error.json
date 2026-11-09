@@ -1,0 +1,98 @@
+{
+ "exercise": {
+  "question": "Return the sum of the elements.",
+  "head": "#include <vector>\n\n// int sum(const std::vector<int>& v);",
+  "tests": [
+   {
+    "name": "three numbers",
+    "code": "CHECK_EQ(sum({1, 2, 3}), 6);"
+   },
+   {
+    "name": "empty",
+    "code": "CHECK_EQ(sum({}), 0);"
+   },
+   {
+    "name": "negatives",
+    "code": "CHECK_EQ(sum({-5, 5, -1}), -1);",
+    "hidden": true
+   }
+  ]
+ },
+ "solution": "int sum(const std::vector<int>& v) {\n  return v.size() +\n}",
+ "mode": "all",
+ "nonce": "fixturenonce",
+ "result": {
+  "ms": 445,
+  "compile": {
+   "ok": false,
+   "timedOut": false,
+   "diagnostics": [
+    {
+     "kind": "error",
+     "message": "expected primary-expression before '}' token",
+     "children": [],
+     "column-origin": 1,
+     "locations": [
+      {
+       "caret": {
+        "file": "cell.cpp",
+        "line": 7,
+        "display-column": 1,
+        "byte-column": 1,
+        "column": 1
+       }
+      }
+     ],
+     "escape-source": false
+    },
+    {
+     "kind": "error",
+     "message": "expected ';' before '}' token",
+     "children": [],
+     "column-origin": 1,
+     "locations": [
+      {
+       "caret": {
+        "file": "cell.cpp",
+        "line": 6,
+        "display-column": 20,
+        "byte-column": 20,
+        "column": 20
+       }
+      },
+      {
+       "caret": {
+        "file": "cell.cpp",
+        "line": 7,
+        "display-column": 1,
+        "byte-column": 1,
+        "column": 1
+       }
+      }
+     ],
+     "fixits": [
+      {
+       "start": {
+        "file": "cell.cpp",
+        "line": 6,
+        "display-column": 20,
+        "byte-column": 20,
+        "column": 20
+       },
+       "next": {
+        "file": "cell.cpp",
+        "line": 6,
+        "display-column": 20,
+        "byte-column": 20,
+        "column": 20
+       },
+       "string": ";"
+      }
+     ],
+     "escape-source": false
+    }
+   ],
+   "other": ""
+  }
+ }
+}

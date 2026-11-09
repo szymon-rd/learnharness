@@ -170,6 +170,38 @@ row"; code cells stay on when Lean is down; a confirmation for Stop.
   (`LeanCell` `hidePrelude`, `TaskFold`). Layout changes on blur wait 400 ms so
   a tap on Submit is not moved under the finger.
 
+## 4c. C++ code cells (9 Nov 2026)
+
+Owner decisions: **function + tests** (the learner implements code between a
+locked head and optional tail; the tutor writes tests with CHECK /
+CHECK_EQ / CHECK_NEAR); tests **visible + hidden** (visible shown and run on
+Check, hidden run only on Submit and shown by name). Everything else was left
+to me ("just do it") and mirrors TLA+: live compile, Check button, tutor
+review that can overrule a pass (`cpp_review`), plan language `"cpp"`,
+practice problems for C++-sourced material, one shared "not two code cells
+in a row" rule.
+
+- **Service** `deploy/cpp/`: `node:24-trixie-slim` + g++ 14 (GCC 12's
+  AddressSanitizer loops on "DEADLYSIGNAL" on this kernel — do not downgrade).
+  `bridge/bridge.mjs`: `POST /check {cell, tests?, runs?}` (no tests =
+  `-fsyntax-only`; else compile `tests.cpp` with `-O0 -fsanitize=address,undefined`
+  and run each test number in its own process under `prlimit --nproc`, 5 s
+  each; JSON diagnostics). Kills each run's process group until empty and
+  sweeps orphans. `bridge/lh_test.hpp` holds the macros. Compose `cpp`
+  (internal network, read-only, `/tmp` exec tmpfs, 1 GB, 128 pids).
+- **Core** `src/core/cpp-cell.ts`: contract, cell document, test program
+  (`#line "test N"` per test, pass marker with a per-check nonce), GCC JSON
+  and sanitizer parsing, verdict, `cppAnswerForModel`.
+- **Server** `src/server/cpp-service.ts`, `src/server/cpp-answer.ts`
+  (`app/api/cpp/check` modes `syntax` | `check`), `app/api/cpp/status`;
+  practice submissions use the thinking input's `cppSolution`.
+- **Agent** `src/agent/tools/cpp.ts`; the review tools share
+  `src/agent/tools/code-review.ts`. **Client** `components/cpp/`; reviews
+  context `components/code-reviews.ts` (TLA+ and C++).
+- **Tests/CI** `tests/cpp-cell.test.ts` (fixtures `tests/fixtures/cpp`),
+  `tests/cpp-exercise-tool.test.ts`, `.github/workflows/cpp.yml` (smoke
+  `deploy/cpp/test/smoke.mjs` + phone QA `tests/e2e/cpp-qa.e2e.mjs`).
+
 ## 4b. TLA+ code cells: file map
 
 - **Service** `deploy/tla/`: `Dockerfile` (Node 24 + OpenJDK 17 +

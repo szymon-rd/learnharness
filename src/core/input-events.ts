@@ -64,6 +64,9 @@ export type ChatInput =
 			 *  `tla` (with the verdict) is set by the server, never the client. */
 			solution?: string;
 			tla?: import("./native-messages.ts").PracticeTlaSubmission;
+			/** A C++ problem's submission (owner, 2026-11-09); `cpp` is the server's. */
+			cppSolution?: string;
+			cpp?: import("./native-messages.ts").PracticeCppSubmission;
 	  }
 	/** The practice move-on signal (owner round 16): the learner's
 	 *  explicit go-ahead during the between-problems pause — the Next
@@ -197,9 +200,12 @@ export function parseChatInput(input: unknown): ChatInput {
 			if (i.solution !== undefined && typeof i.solution !== "string") {
 				throw new ChatInputError("thinking input's solution must be a string");
 			}
+			if (i.cppSolution !== undefined && typeof i.cppSolution !== "string") {
+				throw new ChatInputError("thinking input's cppSolution must be a string");
+			}
 			// A Lean (or TLA+) problem's submission may carry only the proof
 			// (solution) (owner, 2026-10-30); otherwise the thinking text is required.
-			if (typeof i.text !== "string" || (i.text.trim().length === 0 && typeof i.proof !== "string" && typeof i.solution !== "string")) {
+			if (typeof i.text !== "string" || (i.text.trim().length === 0 && typeof i.proof !== "string" && typeof i.solution !== "string" && typeof i.cppSolution !== "string")) {
 				throw new ChatInputError("thinking input requires non-empty text");
 			}
 			return {
@@ -208,6 +214,7 @@ export function parseChatInput(input: unknown): ChatInput {
 				text: i.text,
 				...(typeof i.proof === "string" ? { proof: i.proof } : {}),
 				...(typeof i.solution === "string" ? { solution: i.solution } : {}),
+				...(typeof i.cppSolution === "string" ? { cppSolution: i.cppSolution } : {}),
 			};
 		case "next":
 			return { type: "next" };
@@ -254,7 +261,8 @@ export function inputAppends(
 			// before this runs; a client-sent `lean` never reaches here.
 			const lean = input.proof !== undefined ? (input.lean ?? { proof: input.proof }) : undefined;
 			const tla = input.solution !== undefined ? (input.tla ?? { solution: input.solution }) : undefined;
-			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, lean, tla)];
+			const cpp = input.cppSolution !== undefined ? (input.cpp ?? { solution: input.cppSolution }) : undefined;
+			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, lean, tla, cpp)];
 		}
 		case "next": {
 			// Honest 400s, the thinking gate's discipline: the signal is a

@@ -1,0 +1,114 @@
+name: C++ service
+
+# Builds the C++ image (deploy/cpp) and checks it in the Compose stack:
+# compile-and-test checks from the app container (the only one on the
+# internal "cpp" network), no internet from the C++ container, not routed by
+# Caddy; then the phone UI against the real compiler with screenshots.
+on:
+  push:
+    paths:
+      - "deploy/cpp/**"
+      - "deploy/docker-compose.yml"
+      - "deploy/Caddyfile"
+      - "app/api/cpp/**"
+      - "components/cpp/**"
+      - "src/core/cpp-cell.ts"
+      - "src/server/cpp-*.ts"
+      - "src/agent/tools/cpp.ts"
+      - "tests/e2e/cpp-qa.e2e.mjs"
+      - "tests/e2e/scripted-model.mjs"
+      - ".github/workflows/cpp.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cpp:
+    name: C++ in the Compose stack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: deploy
+    env:
+      LH_HOST: localhost
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the stack (without Lean, which has its own workflow)
+        run: |
+          docker compose up -d --build learnharness caddy cpp
+          for i in $(seq 1 90); do
+            [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/pair)" = 200 ] && break
+            sleep 2
+          done
+          docker compose ps
+      - name: Checks from the app container (warnings, errors, tests, sanitizers, crash, time limit)
+        timeout-minutes: 5
+        run: docker compose exec -T learnharness node --input-type=module - http://cpp:3500 < cpp/test/smoke.mjs
+      - name: No internet from the C++ container; not routed by Caddy; the app reports it
+        run: |
+          set -e
+          if docker compose exec -T cpp node -e "fetch('https://example.com',{signal:AbortSignal.timeout(5000)}).then(()=>process.exit(0),()=>process.exit(1))"; then
+            echo "the C++ container reached the internet"; exit 1
+          fi
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -X POST https://localhost/check)" != 200
+          CODE=$(docker compose exec -T learnharness cat /data/phone-access-code | tr -d '\r\n')
+          COOKIE=$(curl -sk -D - -o /dev/null "https://localhost/pair?code=$CODE" | grep -i set-cookie | sed 's/.*lh_remote=\([^;]*\).*/\1/' | tr -d '\r')
+          test -n "$COOKIE"
+          curl -sk -H "Cookie: lh_remote=$COOKIE" https://localhost/api/cpp/status | tee /dev/stderr | grep -q '"available":true'
+          # Unpaired devices cannot use the check route.
+          test "$(curl -sk -o /dev/null -w '%{http_code}' -X POST https://localhost/api/cpp/check)" = 401
+      - name: Resource use
+        if: always()
+        run: docker stats --no-stream
+      - name: Logs
+        if: always()
+        run: docker compose logs --tail 80
+
+  qa:
+    name: C++ cells QA (phone UI, real g++)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    # contents: write only to publish the screenshots to their own branch.
+    permissions:
+      contents: write
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - name: Start the C++ service
+        run: |
+          docker build -t learnharness-cpp deploy/cpp
+          docker run -d --name qa-cpp -p 127.0.0.1:3501:3500 --tmpfs /tmp:exec --pids-limit 128 learnharness-cpp
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: npm
+      - run: npm ci
+      - run: npx next build
+      - run: npm install --no-save playwright@1.63.0
+      - run: npx playwright install --with-deps chromium
+      - name: Drive the C++ cell states (screenshots)
+        env:
+          LH_CPP_URL: http://127.0.0.1:3501
+        run: node tests/e2e/cpp-qa.e2e.mjs --out test-results/cpp-qa
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: cpp-qa-screenshots
+          path: test-results/cpp-qa
+      - name: C++ service log
+        if: always()
+        run: docker logs --tail 60 qa-cpp
+      - name: Publish the screenshots to qa/cpp-screenshots
+        if: always()
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd test-results/cpp-qa
+          git init -q -b qa/cpp-screenshots
+          git add ./*.png results.json
+          git -c user.name="C++ QA" -c user.email="cpp-qa@users.noreply.github.com" commit -qm "C++ QA screenshots for $GITHUB_SHA"
+          git push -qf "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" qa/cpp-screenshots

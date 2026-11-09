@@ -1,0 +1,62 @@
+{
+ "exercise": {
+  "question": "Return the sum of the elements.",
+  "head": "#include <vector>\n\n// int sum(const std::vector<int>& v);",
+  "tests": [
+   {
+    "name": "three numbers",
+    "code": "CHECK_EQ(sum({1, 2, 3}), 6);"
+   },
+   {
+    "name": "empty",
+    "code": "CHECK_EQ(sum({}), 0);"
+   },
+   {
+    "name": "negatives",
+    "code": "CHECK_EQ(sum({-5, 5, -1}), -1);",
+    "hidden": true
+   }
+  ]
+ },
+ "solution": "int sum(const std::vector<int>& v) {\n  return v.empty() ? 0 : 6;\n}",
+ "mode": "all",
+ "nonce": "fixturenonce",
+ "result": {
+  "ms": 731,
+  "compile": {
+   "ok": true,
+   "timedOut": false,
+   "diagnostics": [],
+   "other": ""
+  },
+  "runs": [
+   {
+    "test": 1,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "ms": 6,
+    "stdout": "\n@@LH_PASS fixturenonce\n",
+    "stderr": ""
+   },
+   {
+    "test": 2,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "ms": 5,
+    "stdout": "\n@@LH_PASS fixturenonce\n",
+    "stderr": ""
+   },
+   {
+    "test": 3,
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "ms": 12,
+    "stdout": "\n@@LH_FAIL\nCHECK_EQ(sum({-5, 5, -1}), -1) failed\n  got:      6\n  expected: -1\n@@LH_END\n",
+    "stderr": ""
+   }
+  ]
+ }
+}

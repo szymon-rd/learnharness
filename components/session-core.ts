@@ -703,6 +703,7 @@ export class SessionModel {
 					input.text,
 					input.proof !== undefined ? { proof: input.proof } : undefined,
 					input.solution !== undefined ? { solution: input.solution } : undefined,
+					input.cppSolution !== undefined ? { solution: input.cppSolution } : undefined,
 				),
 				id: localId(),
 			});

@@ -1,0 +1,62 @@
+{
+ "exercise": {
+  "question": "Return the sum of the elements.",
+  "head": "#include <vector>\n\n// int sum(const std::vector<int>& v);",
+  "tests": [
+   {
+    "name": "three numbers",
+    "code": "CHECK_EQ(sum({1, 2, 3}), 6);"
+   },
+   {
+    "name": "empty",
+    "code": "CHECK_EQ(sum({}), 0);"
+   },
+   {
+    "name": "negatives",
+    "code": "CHECK_EQ(sum({-5, 5, -1}), -1);",
+    "hidden": true
+   }
+  ]
+ },
+ "solution": "#include <climits>\nint sum(const std::vector<int>& v) {\n  int s = INT_MAX;\n  for (int x : v) s += x;\n  return s - INT_MAX;\n}",
+ "mode": "all",
+ "nonce": "fixturenonce",
+ "result": {
+  "ms": 730,
+  "compile": {
+   "ok": true,
+   "timedOut": false,
+   "diagnostics": [],
+   "other": ""
+  },
+  "runs": [
+   {
+    "test": 1,
+    "exitCode": 87,
+    "signal": null,
+    "timedOut": false,
+    "ms": 20,
+    "stdout": "",
+    "stderr": "cell.cpp:8:21: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'\n    #0 0x0 in sum(std::vector<int, std::allocator<int> > const&) /tmp/cpp-X/cell.cpp:8\n    #1 0x0 in lh_test_1 /tmp/cpp-X/test 1:1\n    #2 0x0 in main /tmp/cpp-X/harness:4\n    #3 0x0  (/lib/x86_64-linux-gnu/libc.so.6+0x29ca7) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n    #4 0x0 in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x29d64) (BuildId: 5e5b51f4c39af9ac589408c1dc432ba390a273cc)\n    #5 0x0 in _start (/tmp/cpp-X/tests+0x12350) (BuildId: fd8474bebbbd0ebdd88e7570d1c0dee1476f30a0)\n\n"
+   },
+   {
+    "test": 2,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "ms": 5,
+    "stdout": "\n@@LH_PASS fixturenonce\n",
+    "stderr": ""
+   },
+   {
+    "test": 3,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "ms": 5,
+    "stdout": "\n@@LH_PASS fixturenonce\n",
+    "stderr": ""
+   }
+  ]
+ }
+}
