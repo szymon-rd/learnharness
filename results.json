@@ -1,0 +1,142 @@
+[
+  {
+    "id": "L00",
+    "title": "settings: Code cells is Off by default; switch to Mixed in",
+    "status": "PASS",
+    "note": "",
+    "ms": 2295
+  },
+  {
+    "id": "L01",
+    "title": "teaching session on Lean: probe, then the plan is marked as a Lean topic",
+    "status": "PASS",
+    "note": "",
+    "ms": 6007
+  },
+  {
+    "id": "L02",
+    "title": "the Lean exercise opens in the dock; Lean starts (status badge)",
+    "status": "PASS",
+    "note": "",
+    "ms": 16522
+  },
+  {
+    "id": "L03",
+    "title": "Lean loads Mathlib: the starter proof is incomplete (sorry) and the goal shows",
+    "status": "PASS",
+    "note": "",
+    "ms": 15603
+  },
+  {
+    "id": "L04",
+    "title": "the statement is locked: typing into it changes nothing",
+    "status": "PASS",
+    "note": "",
+    "ms": 165
+  },
+  {
+    "id": "L05",
+    "title": "syntax error: an unfinished term is underlined and explained",
+    "status": "PASS",
+    "note": "",
+    "ms": 2604
+  },
+  {
+    "id": "L06",
+    "title": "tactic error: rfl fails with Lean's message",
+    "status": "PASS",
+    "note": "",
+    "ms": 746
+  },
+  {
+    "id": "L07",
+    "title": "autocompletion: typing a library name offers Lean's completions",
+    "status": "PASS",
+    "note": "",
+    "ms": 5737
+  },
+  {
+    "id": "L08",
+    "title": "abbreviations: \\to, \\forall, \\N, \\< become →, ∀, ℕ, ⟨; the header's Tab key indents",
+    "status": "PASS",
+    "note": "",
+    "ms": 979
+  },
+  {
+    "id": "L09",
+    "title": "submit a passing proof: the server's verdict card, then the tutor reacts",
+    "status": "PASS",
+    "note": "",
+    "ms": 8044
+  },
+  {
+    "id": "L10",
+    "title": "a second code cell in a row is refused: the tutor mixes in a quiz",
+    "status": "PASS",
+    "note": "",
+    "ms": 348
+  },
+  {
+    "id": "L11",
+    "title": "Mathlib exercise: a wrong tactic shows Lean's error",
+    "status": "PASS",
+    "note": "",
+    "ms": 19084
+  },
+  {
+    "id": "L12",
+    "title": "Lean goes offline: the cell says so and offers Reconnect",
+    "status": "PASS",
+    "note": "",
+    "ms": 19334
+  },
+  {
+    "id": "L13",
+    "title": "submit a failing proof: the card shows Lean's errors and the reference proof",
+    "status": "PASS",
+    "note": "",
+    "ms": 8420
+  },
+  {
+    "id": "L14",
+    "title": "practice: a Lean problem for material from the Lean session",
+    "status": "PASS",
+    "note": "",
+    "ms": 20758
+  },
+  {
+    "id": "L15",
+    "title": "practice: a wrong proof is graded by Lean in the submission card",
+    "status": "PASS",
+    "note": "",
+    "ms": 10070
+  },
+  {
+    "id": "L16",
+    "title": "practice: the right proof passes and the problem concludes",
+    "status": "PASS",
+    "note": "",
+    "ms": 10178
+  },
+  {
+    "id": "L17",
+    "title": "practice: a second Lean problem in a row is refused; a plain problem follows",
+    "status": "PASS",
+    "note": "",
+    "ms": 1482
+  },
+  {
+    "id": "D1",
+    "title": "desktop: the Lean teaching session's cards",
+    "status": "PASS",
+    "note": "",
+    "ms": 956
+  },
+  {
+    "id": "D2",
+    "title": "desktop: a live Lean cell (practice, Mathlib-free problem)",
+    "status": "PASS",
+    "note": "",
+    "ms": 20635
+  }
+]
