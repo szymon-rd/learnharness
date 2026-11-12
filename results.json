@@ -1,0 +1,121 @@
+[
+  {
+    "id": "R00",
+    "title": "settings: Code cells is Off by default and offers Rocq; switch to Mixed in",
+    "status": "PASS",
+    "note": "",
+    "ms": 2194
+  },
+  {
+    "id": "R01",
+    "title": "teaching session on Rocq: probe, then the plan is marked as a Rocq topic",
+    "status": "PASS",
+    "note": "",
+    "ms": 6034
+  },
+  {
+    "id": "R02",
+    "title": "the Rocq exercise opens; coq-lsp checks the starter: incomplete (Admitted)",
+    "status": "PASS",
+    "note": "",
+    "ms": 2503
+  },
+  {
+    "id": "R03",
+    "title": "the statement is locked: typing into it changes nothing",
+    "status": "PASS",
+    "note": "",
+    "ms": 81
+  },
+  {
+    "id": "R04",
+    "title": "a wrong tactic: Rocq's error is marked and explained; the goal shows",
+    "status": "PASS",
+    "note": "",
+    "ms": 951
+  },
+  {
+    "id": "R05",
+    "title": "abbreviations: \\sep, \\wand, \\later become ∗, -∗, ▷; the Tab key indents",
+    "status": "PASS",
+    "note": "",
+    "ms": 879
+  },
+  {
+    "id": "R06",
+    "title": "lia passes live; submit: the server's verdict card and the tutor's reply",
+    "status": "PASS",
+    "note": "",
+    "ms": 2266
+  },
+  {
+    "id": "R07",
+    "title": "a second code cell in a row is refused: the tutor mixes in a quiz",
+    "status": "PASS",
+    "note": "",
+    "ms": 358
+  },
+  {
+    "id": "R08",
+    "title": "Iris: the goals panel shows the proof mode context after iIntros",
+    "status": "PASS",
+    "note": "",
+    "ms": 4908
+  },
+  {
+    "id": "R09",
+    "title": "Rocq goes offline: the cell says so and offers Reconnect",
+    "status": "PASS",
+    "note": "",
+    "ms": 9286
+  },
+  {
+    "id": "R10",
+    "title": "submit a wrong Iris proof: the card shows Rocq's error and the reference proof",
+    "status": "PASS",
+    "note": "",
+    "ms": 3015
+  },
+  {
+    "id": "R11",
+    "title": "practice: a Rocq problem for material from the Rocq session",
+    "status": "PASS",
+    "note": "",
+    "ms": 4706
+  },
+  {
+    "id": "R12",
+    "title": "practice: an unfinished proof is graded by Rocq in the submission card",
+    "status": "PASS",
+    "note": "",
+    "ms": 1102
+  },
+  {
+    "id": "R13",
+    "title": "practice: the right proof passes and the problem concludes",
+    "status": "PASS",
+    "note": "",
+    "ms": 1465
+  },
+  {
+    "id": "R14",
+    "title": "practice: a second code problem in a row is refused; a plain problem follows",
+    "status": "PASS",
+    "note": "",
+    "ms": 1371
+  },
+  {
+    "id": "D1",
+    "title": "desktop: the Rocq teaching session's cards",
+    "status": "PASS",
+    "note": "",
+    "ms": 915
+  },
+  {
+    "id": "D2",
+    "title": "desktop: a live Rocq cell with the symbol bar (practice)",
+    "status": "PASS",
+    "note": "",
+    "ms": 3106
+  }
+]
