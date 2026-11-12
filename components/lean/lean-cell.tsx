@@ -157,8 +157,11 @@ const abbreviations = EditorView.inputHandler.of((view, from, to, text) => {
 const cellTheme = EditorView.theme({
 	"&": { fontSize: "13px", backgroundColor: "transparent" },
 	"&.cm-focused": { outline: "none" },
+	// The cursor follows the text color (CodeMirror draws it black by default,
+	// invisible on the dark theme).
+	".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--foreground)" },
 	".cm-scroller": { fontFamily: "var(--font-mono, ui-monospace, monospace)", lineHeight: "1.55", maxHeight: "45vh" },
-	".cm-content": { padding: "8px 0" },
+	".cm-content": { padding: "8px 0", caretColor: "var(--foreground)" },
 	".cm-line": { padding: "0 10px" },
 	".cm-lean-locked": { backgroundColor: "color-mix(in oklab, var(--muted) 70%, transparent)", color: "var(--muted-foreground)" },
 	".cm-gutters": { backgroundColor: "transparent", border: "none" },
