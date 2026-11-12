@@ -1,0 +1,142 @@
+[
+  {
+    "id": "C00",
+    "title": "settings: Code cells is Off by default and offers C++; switch to Mixed in",
+    "status": "PASS",
+    "note": "",
+    "ms": 2221
+  },
+  {
+    "id": "C01",
+    "title": "teaching session on C++: probe, then the plan is marked as a C++ topic",
+    "status": "PASS",
+    "note": "",
+    "ms": 6037
+  },
+  {
+    "id": "C02",
+    "title": "the C++ exercise opens in the dock; the starter compiles (live check)",
+    "status": "PASS",
+    "note": "",
+    "ms": 2441
+  },
+  {
+    "id": "C03",
+    "title": "the head is locked: typing into it changes nothing",
+    "status": "PASS",
+    "note": "",
+    "ms": 96
+  },
+  {
+    "id": "C04",
+    "title": "typing an unfinished expression: the compiler's error is marked at its line",
+    "status": "PASS",
+    "note": "",
+    "ms": 1843
+  },
+  {
+    "id": "C05",
+    "title": "Check on the starter: AddressSanitizer catches the off-by-one at the learner's line",
+    "status": "PASS",
+    "note": "",
+    "ms": 3050
+  },
+  {
+    "id": "C06",
+    "title": "warnings show without failing",
+    "status": "PASS",
+    "note": "",
+    "ms": 1440
+  },
+  {
+    "id": "C07",
+    "title": "autocompletion offers std names; Esc closes it and nothing else",
+    "status": "PASS",
+    "note": "",
+    "ms": 692
+  },
+  {
+    "id": "C08",
+    "title": "a fitted solution passes the visible tests on Check; the hidden test is listed by name",
+    "status": "PASS",
+    "note": "",
+    "ms": 1516
+  },
+  {
+    "id": "C09",
+    "title": "submit: the hidden test catches the fitted solution",
+    "status": "PASS",
+    "note": "",
+    "ms": 1933
+  },
+  {
+    "id": "C10",
+    "title": "a second code cell in a row is refused: the tutor mixes in a quiz",
+    "status": "PASS",
+    "note": "",
+    "ms": 1254
+  },
+  {
+    "id": "C11",
+    "title": "the strings exercise: while editing, the task and the locked head fold",
+    "status": "PASS",
+    "note": "",
+    "ms": 2447
+  },
+  {
+    "id": "C12",
+    "title": "the checker goes offline: the cell says so; Submit keeps the exercise",
+    "status": "PASS",
+    "note": "",
+    "ms": 7378
+  },
+  {
+    "id": "C13",
+    "title": "the tests pass but the task said not to use std::reverse: the tutor overrules",
+    "status": "PASS",
+    "note": "",
+    "ms": 3337
+  },
+  {
+    "id": "C14",
+    "title": "practice: a C++ problem for material from the C++ session",
+    "status": "PASS",
+    "note": "",
+    "ms": 4619
+  },
+  {
+    "id": "C15",
+    "title": "practice: the starter fails the hidden test in the submission card",
+    "status": "PASS",
+    "note": "",
+    "ms": 1529
+  },
+  {
+    "id": "C16",
+    "title": "practice: the fixed code passes and the problem concludes",
+    "status": "PASS",
+    "note": "",
+    "ms": 1465
+  },
+  {
+    "id": "C17",
+    "title": "practice: a second code problem in a row is refused; a plain problem follows",
+    "status": "PASS",
+    "note": "",
+    "ms": 1963
+  },
+  {
+    "id": "D1",
+    "title": "desktop: the C++ teaching session's cards",
+    "status": "PASS",
+    "note": "",
+    "ms": 989
+  },
+  {
+    "id": "D2",
+    "title": "desktop: a live C++ cell with a failing visible test (practice)",
+    "status": "PASS",
+    "note": "",
+    "ms": 4369
+  }
+]
