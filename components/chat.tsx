@@ -21,6 +21,7 @@ import { LiveToolCard } from "@/components/artifacts/live-tool-card";
 import { LeanPreparingLine } from "@/components/lean/lean-preparing-line";
 import { TlaPreparingLine } from "@/components/tla/tla-preparing-line";
 import { CppPreparingLine } from "@/components/cpp/cpp-preparing-line";
+import { RocqPreparingLine } from "@/components/rocq/rocq-preparing-line";
 import { collectCodeReviews, sameCodeReviews, CodeReviewsContext, type CodeReviewView } from "@/components/code-reviews";
 import type { PracticeCodeSubmission } from "@/components/practice-dock";
 import { useIsPhone, useSoftKeyboardOpen } from "@/components/phone-layout";
@@ -522,6 +523,7 @@ export function Chat({
 				...(code?.proof !== undefined ? { proof: code.proof } : {}),
 				...(code?.solution !== undefined ? { solution: code.solution } : {}),
 				...(code?.cppSolution !== undefined ? { cppSolution: code.cppSolution } : {}),
+				...(code?.rocqProof !== undefined ? { rocqProof: code.rocqProof } : {}),
 			});
 		},
 		[send],
@@ -2040,7 +2042,8 @@ const TranscriptRow = memo(function TranscriptRow({
 									case "tool-recall":
 									case "tool-lean_exercise":
 									case "tool-tla_exercise":
-									case "tool-cpp_exercise": {
+									case "tool-cpp_exercise":
+									case "tool-rocq_exercise": {
 										// Pending/streaming questions live in the dock, not the
 										// transcript; answered ones render as graded records.
 										if (part.state === "output-available") {
@@ -2058,6 +2061,9 @@ const TranscriptRow = memo(function TranscriptRow({
 										}
 										if (part.type === "tool-cpp_exercise" && part.state === "input-streaming") {
 											return <CppPreparingLine key={pi} />;
+										}
+										if (part.type === "tool-rocq_exercise" && part.state === "input-streaming") {
+											return <RocqPreparingLine key={pi} />;
 										}
 										// A Lean exercise stays input-streaming while its reference
 										// proof is checked; say so (and when Lean is still starting).
@@ -2566,7 +2572,7 @@ function DockOverlay({
 						>
 							{pending ? (
 								<QuestionDock
-									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise"}
+									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise" | "rocq_exercise"}
 									toolCallId={pending.toolCallId}
 									chatId={chatId}
 									input={pending.input as never}
@@ -2585,7 +2591,7 @@ function DockOverlay({
 								<PracticeDock
 									problemCallId={practice.toolCallId}
 									chatId={chatId}
-									input={practice.input as { statement: string; lean?: unknown; tla?: unknown; cpp?: unknown }}
+									input={practice.input as { statement: string; lean?: unknown; tla?: unknown; cpp?: unknown; rocq?: unknown }}
 									expanded={expanded}
 									onExpand={() => {
 										setExpanded(true);

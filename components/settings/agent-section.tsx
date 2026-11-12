@@ -323,6 +323,14 @@ export function AgentSection({
 			.then(setLean)
 			.catch(() => setLean({ available: false, reason: "Could not reach the server." }));
 	}, []);
+	/** Rocq for code cells (/api/rocq/status): null while loading. */
+	const [rocq, setRocq] = useState<{ available: boolean; reason?: string } | null>(null);
+	useEffect(() => {
+		fetch("/api/rocq/status")
+			.then((r) => r.json())
+			.then(setRocq)
+			.catch(() => setRocq({ available: false, reason: "Could not reach the server." }));
+	}, []);
 	/** C++ for code cells (/api/cpp/status): null while loading. */
 	const [cpp, setCpp] = useState<{ available: boolean; reason?: string } | null>(null);
 	useEffect(() => {
@@ -794,15 +802,18 @@ export function AgentSection({
 				    mark). Greyed only when neither service is available. */}
 				{(() => {
 					const on = agent?.codeCells?.enabled === true;
-					const unavailable = lean !== null && tla !== null && cpp !== null && !lean.available && !tla.available && !cpp.available;
-					const available = [lean?.available ? "Lean" : null, tla?.available ? "TLA+" : null, cpp?.available ? "C++" : null].filter((l): l is string => l !== null);
-					const languages = available.length ? available.join(", ").replace(/, ([^,]*)$/, " or $1") : "Lean, TLA+ or C++";
+					const services = [lean, tla, cpp, rocq];
+					const unavailable = services.every((s) => s !== null && !s.available);
+					const available = [lean?.available ? "Lean" : null, tla?.available ? "TLA+" : null, cpp?.available ? "C++" : null, rocq?.available ? "Rocq" : null].filter(
+						(l): l is string => l !== null,
+					);
+					const languages = available.length ? available.join(", ").replace(/, ([^,]*)$/, " or $1") : "Lean, TLA+, C++ or Rocq";
 					return (
 						<SettingsRow
 							label="Code cells"
 							hint={
 								unavailable
-									? "No code-cell language (Lean, TLA+, C++) is available on this server."
+									? "No code-cell language (Lean, TLA+, C++, Rocq) is available on this server."
 									: `${languages} exercises among the checks, only when a session is about that language`
 							}
 							testid="code-cells-row"

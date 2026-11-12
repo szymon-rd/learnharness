@@ -67,6 +67,9 @@ export type ChatInput =
 			/** A C++ problem's submission (owner, 2026-11-09); `cpp` is the server's. */
 			cppSolution?: string;
 			cpp?: import("./native-messages.ts").PracticeCppSubmission;
+			/** A Rocq problem's submission (owner, 2026-11-12); `rocq` is the server's. */
+			rocqProof?: string;
+			rocq?: import("./native-messages.ts").PracticeRocqSubmission;
 	  }
 	/** The practice move-on signal (owner round 16): the learner's
 	 *  explicit go-ahead during the between-problems pause — the Next
@@ -203,9 +206,12 @@ export function parseChatInput(input: unknown): ChatInput {
 			if (i.cppSolution !== undefined && typeof i.cppSolution !== "string") {
 				throw new ChatInputError("thinking input's cppSolution must be a string");
 			}
+			if (i.rocqProof !== undefined && typeof i.rocqProof !== "string") {
+				throw new ChatInputError("thinking input's rocqProof must be a string");
+			}
 			// A Lean (or TLA+) problem's submission may carry only the proof
 			// (solution) (owner, 2026-10-30); otherwise the thinking text is required.
-			if (typeof i.text !== "string" || (i.text.trim().length === 0 && typeof i.proof !== "string" && typeof i.solution !== "string" && typeof i.cppSolution !== "string")) {
+			if (typeof i.text !== "string" || (i.text.trim().length === 0 && typeof i.proof !== "string" && typeof i.solution !== "string" && typeof i.cppSolution !== "string" && typeof i.rocqProof !== "string")) {
 				throw new ChatInputError("thinking input requires non-empty text");
 			}
 			return {
@@ -215,6 +221,7 @@ export function parseChatInput(input: unknown): ChatInput {
 				...(typeof i.proof === "string" ? { proof: i.proof } : {}),
 				...(typeof i.solution === "string" ? { solution: i.solution } : {}),
 				...(typeof i.cppSolution === "string" ? { cppSolution: i.cppSolution } : {}),
+				...(typeof i.rocqProof === "string" ? { rocqProof: i.rocqProof } : {}),
 			};
 		case "next":
 			return { type: "next" };
@@ -262,7 +269,8 @@ export function inputAppends(
 			const lean = input.proof !== undefined ? (input.lean ?? { proof: input.proof }) : undefined;
 			const tla = input.solution !== undefined ? (input.tla ?? { solution: input.solution }) : undefined;
 			const cpp = input.cppSolution !== undefined ? (input.cpp ?? { solution: input.cppSolution }) : undefined;
-			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, lean, tla, cpp)];
+			const rocq = input.rocqProof !== undefined ? (input.rocq ?? { proof: input.rocqProof }) : undefined;
+			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, lean, tla, cpp, rocq)];
 		}
 		case "next": {
 			// Honest 400s, the thinking gate's discipline: the signal is a

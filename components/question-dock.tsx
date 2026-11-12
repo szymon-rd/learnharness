@@ -42,6 +42,7 @@ import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-
 import { LeanDockForm, parseLeanExerciseInput } from "@/components/lean/lean-dock";
 import { parseTlaExerciseInput, TlaDockForm } from "@/components/tla/tla-dock";
 import { CppDockForm, parseCppExerciseInput } from "@/components/cpp/cpp-dock";
+import { parseRocqExerciseInput, RocqDockForm } from "@/components/rocq/rocq-dock";
 
 /**
  * The question dock — a pending quiz/ask REPLACES the chat composer: the
@@ -64,7 +65,7 @@ import { CppDockForm, parseCppExerciseInput } from "@/components/cpp/cpp-dock";
  */
 
 export interface QuestionDockProps {
-	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise";
+	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise" | "rocq_exercise";
 	toolCallId: string;
 	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
 	chatId?: string;
@@ -188,6 +189,34 @@ export function QuestionDock({
 			</>
 		);
 	}
+	// Rocq code cells (owner, 2026-11-12): like Lean's.
+	if (toolName === "rocq_exercise") {
+		const rocq = parseRocqExerciseInput(input);
+		if (!rocq) {
+			return (
+				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
+					This exercise arrived malformed — the transcript keeps the retry.
+				</div>
+			);
+		}
+		return (
+			<>
+				{!expanded && <QuestionDockBar toolName="rocq_exercise" question={rocq.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="Rocq" />}
+				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
+					<RocqDockForm
+						toolCallId={toolCallId}
+						input={rocq}
+						onSubmit={onSubmit}
+						initialDraft={initialDraft}
+						onSaveDraft={onSaveDraft}
+						onEscape={onEscape}
+						dictationClaim={dictationClaim}
+						compactionRunning={compactionRunning}
+					/>
+				</div>
+			</>
+		);
+	}
 	// C++ code cells (owner, 2026-11-09): the same shape with the C++ cell.
 	if (toolName === "cpp_exercise") {
 		const cpp = parseCppExerciseInput(input);
@@ -293,7 +322,7 @@ export function QuestionDockBar({
 	label,
 	toolLabel,
 }: {
-	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise" | "tla_exercise" | "cpp_exercise";
+	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise" | "tla_exercise" | "cpp_exercise" | "rocq_exercise";
 	question: string;
 	onExpand: () => void;
 	variant?: "collapsed" | "reveal";

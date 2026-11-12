@@ -1,0 +1,14 @@
+{
+ "exercise": {
+  "question": "q",
+  "prelude": "From iris.proofmode Require Import proofmode.\nFrom iris.base_logic Require Import iprop.",
+  "statement": "Lemma qa_sep_comm {Σ} (P Q : iProp Σ) : P ∗ Q ⊢ Q ∗ P."
+ },
+ "proof": "Proof.\n  iIntros \"[HP HQ]\".\n  iExact \"HP\".\nQed.",
+ "result": {
+  "exitCode": 1,
+  "timedOut": false,
+  "ms": 786,
+  "output": "File \"./Check.v\", line 7, characters 2-13:\nError: Tactic failure: iExact: \"HP\" : P does not match goal.\n\n"
+ }
+}

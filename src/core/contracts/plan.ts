@@ -38,7 +38,7 @@ export interface PlanTree {
 	codeCells?: CodeCellLanguage | true;
 }
 
-export type CodeCellLanguage = "lean" | "tla" | "cpp";
+export type CodeCellLanguage = "lean" | "tla" | "cpp" | "rocq";
 
 /** The plan's code-cell language, reading the old boolean mark as Lean. */
 export function planCodeCells(tree: Pick<PlanTree, "codeCells"> | null | undefined): CodeCellLanguage | null {
@@ -46,6 +46,7 @@ export function planCodeCells(tree: Pick<PlanTree, "codeCells"> | null | undefin
 	if (mark === true || mark === "lean") return "lean";
 	if (mark === "tla") return "tla";
 	if (mark === "cpp") return "cpp";
+	if (mark === "rocq") return "rocq";
 	return null;
 }
 
@@ -103,7 +104,7 @@ export function derivePlanStatuses(tree: PlanTree, messages: readonly PartsCarri
 		for (const part of m.parts) {
 			// Either quizzing tool (quiz/explain) tags position — the mechanic
 			// is a settings switch; the fold recognizes both (owner 2026-09-27).
-			if (part.type !== "tool-quiz" && part.type !== "tool-explain" && part.type !== "tool-lean_exercise" && part.type !== "tool-tla_exercise" && part.type !== "tool-cpp_exercise") continue;
+			if (part.type !== "tool-quiz" && part.type !== "tool-explain" && part.type !== "tool-lean_exercise" && part.type !== "tool-tla_exercise" && part.type !== "tool-cpp_exercise" && part.type !== "tool-rocq_exercise") continue;
 			const nodeId = (part.input as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue; // untagged/unknown — moves nothing
 			if (runs.at(-1) !== nodeId) runs.push(nodeId);
@@ -153,7 +154,7 @@ export function derivePlanStatusesLh(tree: PlanTree, messages: readonly LhMessag
 		const content = (m as { content?: unknown }).content;
 		if (!Array.isArray(content)) continue;
 		for (const block of content as Array<{ type?: string; name?: string; arguments?: unknown }>) {
-			if (block.type !== "toolCall" || (block.name !== "quiz" && block.name !== "explain" && block.name !== "lean_exercise" && block.name !== "tla_exercise" && block.name !== "cpp_exercise")) continue;
+			if (block.type !== "toolCall" || (block.name !== "quiz" && block.name !== "explain" && block.name !== "lean_exercise" && block.name !== "tla_exercise" && block.name !== "cpp_exercise" && block.name !== "rocq_exercise")) continue;
 			const nodeId = (block.arguments as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue;
 			if (runs.at(-1) !== nodeId) runs.push(nodeId);

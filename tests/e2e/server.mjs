@@ -49,16 +49,17 @@ const app = next({ dev: false, dir: ROOT, hostname: "0.0.0.0", port });
 await app.prepare();
 const handle = app.getRequestHandler();
 const server = http.createServer((req, res) => handle(req, res));
-// Lean code cells (tests/e2e/lean-qa.e2e.mjs): LH_LEAN_URL points the app at
-// a Lean service; the browser's /lean/lsp WebSocket is passed through to it
-// here, the way Caddy does it on a server.
+// Lean and Rocq code cells (tests/e2e/lean-qa.e2e.mjs, rocq-qa.e2e.mjs):
+// LH_LEAN_URL / LH_ROCQ_URL point the app at the services; the browser's
+// /lean/lsp and /rocq/lsp WebSockets are passed through to them here, the
+// way Caddy does it on a server.
 server.on("upgrade", (req, socket, head) => {
-	const lean = process.env.LH_LEAN_URL;
-	if (!lean || !req.url?.startsWith("/lean/lsp")) {
+	const target = req.url?.startsWith("/lean/lsp") ? process.env.LH_LEAN_URL : req.url?.startsWith("/rocq/lsp") ? process.env.LH_ROCQ_URL : undefined;
+	if (!target) {
 		socket.destroy();
 		return;
 	}
-	const { hostname, port: leanPort } = new URL(lean);
+	const { hostname, port: leanPort } = new URL(target);
 	const upstream = net.connect(Number(leanPort), hostname, () => {
 		const headers = Object.entries(req.headers).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`);
 		upstream.write(`${req.method} ${req.url} HTTP/1.1\r\n${headers.join("\r\n")}\r\n\r\n`);

@@ -401,6 +401,7 @@ function teacher(context, call) {
 	if (tools.has("lean_exercise") && aboutLean(msgs)) return leanTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
 	if (tools.has("tla_exercise") && aboutTla(msgs)) return tlaTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
 	if (tools.has("cpp_exercise") && aboutCpp(msgs)) return cppTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
+	if (tools.has("rocq_exercise") && aboutRocq(msgs)) return rocqTeacher(context, call, msgs, teach, acknowledge(trailing(msgs)));
 	const calls = toolCallsOf(teach);
 	const done = (name) => calls.some((c) => c.name === name && resultFor(teach, c.id) && !resultFor(teach, c.id).isError);
 	const questions = calls.filter((c) => ["quiz", "explain", "ask_user_question"].includes(c.name));
@@ -477,6 +478,7 @@ function practice(context, call) {
 	if (toolDeclaration(context, "problem").includes('"lean"') && aboutLean(msgs)) return leanPractice(context, call, msgs);
 	if (toolDeclaration(context, "problem").includes('"tla"') && aboutTla(msgs)) return tlaPractice(context, call, msgs);
 	if (toolDeclaration(context, "problem").includes('"cpp"') && aboutCpp(msgs)) return cppPractice(context, call, msgs);
+	if (toolDeclaration(context, "problem").includes('"rocq"') && aboutRocq(msgs)) return rocqPractice(context, call, msgs);
 	const calls = toolCallsOf(msgs);
 	const posed = calls.filter((c) => c.name === "problem" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
 	const concluded = calls.filter((c) => c.name === "conclude" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
@@ -1042,6 +1044,120 @@ function cppPractice(context, call, msgs) {
 		return reply([fauxText(posed.length === 0 ? "A C++ one to start." : "Another C++ one."), call("problem", { ...CPP_PROBLEM, ...target })]);
 	}
 	return reply([fauxText(active ? "Edit the code, use Check, and submit when the tests pass." : "Press **Next problem** to continue.")]);
+}
+
+// ─── Rocq code cells (tests/e2e/rocq-qa.e2e.mjs) ───────────────────────────
+//
+// Only when code cells are on (the tools carry rocq_exercise / the problem
+// tool's rocq block) AND the learner's topic mentions Rocq.
+
+function aboutRocq(msgs) {
+	return msgs.some((m) => m.role === "user" && /\bRocq\b/.test(textOf(m)) && !textOf(m).startsWith("[Session context]"));
+}
+
+const ROCQ_PLAN = ["graph TD", "  tactics[Tactic proofs] --> sep[Separating conjunction]", "  sep --> ipm[The Iris proof mode]"].join("\n");
+
+const ROCQ_EX1 = {
+	nodeId: "tactics",
+	question: "Prove that addition on natural numbers is **commutative**. Hint: `lia` decides linear arithmetic.",
+	statement: "Lemma qa_add_comm (a b : nat) : a + b = b + a.",
+	referenceProof: "Proof.\n  lia.\nQed.",
+};
+
+const ROCQ_EX2 = {
+	nodeId: "ipm",
+	question: "In Iris, prove that separating conjunction `∗` is commutative. Destruct the hypothesis with `iIntros`, then frame.",
+	prelude: "From iris.proofmode Require Import proofmode.\nFrom iris.base_logic Require Import iprop.",
+	statement: "Lemma qa_sep_comm {Σ} (P Q : iProp Σ) : P ∗ Q ⊢ Q ∗ P.",
+	referenceProof: 'Proof.\n  iIntros "[HP HQ]".\n  iFrame.\nQed.',
+};
+
+const ROCQ_QUIZ = {
+	type: "check",
+	nodeId: "sep",
+	question: "In separation logic, what does `P ∗ Q` assert?",
+	options: [
+		{ label: "P and Q hold for disjoint parts of the resources", value: "disjoint" },
+		{ label: "P and Q both hold for the same resources", value: "same" },
+		{ label: "P implies Q", value: "implies" },
+	],
+	explanation: "∗ splits the resources: P owns one part and Q a disjoint other part.",
+	correctAnswer: "disjoint",
+};
+
+function rocqVerdict(msgs, c) {
+	const a = parseJson(textOf(resultFor(msgs, c.id) ?? {})) ?? {};
+	if (a.dismissed) return "Skipped — fine.";
+	if (a.correct === true) return "Rocq accepts your proof — well done.";
+	return `Rocq did not accept that proof (${a.verdict ?? "it reports errors"}). Look at the errors in the card; we'll come back to it.`;
+}
+
+function rocqTeacher(context, call, msgs, teach, ack) {
+	const calls = toolCallsOf(teach);
+	const ok = (c) => resultFor(teach, c.id) && !resultFor(teach, c.id).isError;
+	if (!calls.some((c) => c.name === "plan_init" && ok(c))) {
+		return reply([
+			fauxText(`${ack}Here's the route: tactic proofs, the separating conjunction, then the Iris proof mode. You'll write the proofs yourself in Rocq cells.`),
+			call("plan_init", { mermaid: ROCQ_PLAN, codeCells: "rocq" }),
+		]);
+	}
+	const ex = calls.filter((c) => c.name === "rocq_exercise");
+	const quiz = calls.filter((c) => c.name === "quiz");
+	if (ex.length === 0) {
+		return reply([fauxText(`${ack}## Proofs as scripts\n\nA proof starts with \`Proof.\`, runs tactics that transform the goal, and ends with \`Qed.\` once no goals remain. The **goals** panel shows what is left.\n\nYour turn:`), call("rocq_exercise", ROCQ_EX1)]);
+	}
+	if (ex.length === 1 && ok(ex[0])) {
+		// Deliberately a second code cell in a row: the tool must refuse it.
+		return reply([fauxText(`${ack}${rocqVerdict(teach, ex[0])}\n\nAnother one:`), call("rocq_exercise", ROCQ_EX2)]);
+	}
+	if (ex.length === 2 && resultFor(teach, ex[1].id)?.isError && quiz.length === 0) {
+		return reply([fauxText("Let's mix in a quick check before the Iris proof."), call("quiz", ROCQ_QUIZ)]);
+	}
+	if (quiz.length === 1 && ok(quiz[0]) && ex.length === 2) {
+		return reply([fauxText(`${ack}${verdictLine(teach, quiz[0])}\n\nNow in Iris:`), call("rocq_exercise", ROCQ_EX2)]);
+	}
+	if (ex.length === 3 && ok(ex[2])) {
+		return reply([fauxText(`${ack}${rocqVerdict(teach, ex[2])}\n\n## Summary\n\n- A Rocq proof is a script of tactics between \`Proof.\` and \`Qed.\`.\n- \`lia\` decides linear arithmetic over \`nat\` and \`Z\`.\n- In the Iris proof mode, \`iIntros "[HP HQ]"\` splits \`P ∗ Q\` and \`iFrame\` closes goals from the context.`)]);
+	}
+	return reply([fauxText(ack.trim() || "Noted.")]);
+}
+
+const ROCQ_PROBLEM = {
+	statement: "Prove in Rocq that every natural number is smaller than its successor.",
+	mode: "recall",
+	modelSolution: "`lia` closes it: n < S n is linear arithmetic.",
+	rocq: { statement: "Lemma qa_lt_succ (n : nat) : n < S n.", referenceProof: "Proof.\n  lia.\nQed." },
+};
+
+function rocqPractice(context, call, msgs) {
+	const ids = [...msgs.map((m) => textOf(m)).join("\n").matchAll(/\[(n_[a-z0-9]+)\]/g)].map((m) => m[1]);
+	const calls = toolCallsOf(msgs);
+	const problems = calls.filter((c) => c.name === "problem");
+	const posed = problems.filter((c) => resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
+	const concluded = calls.filter((c) => c.name === "conclude" && resultFor(msgs, c.id) && !resultFor(msgs, c.id).isError);
+	const active = posed.length > concluded.length;
+	const last = msgs.at(-1);
+	const tailText = trailing(msgs).map((m) => textOf(m)).join("\n");
+	const target = ids.length ? { target: [ids[0]] } : {};
+	if (last?.role === "toolResult" && last.toolName === "conclude") {
+		return reply([fauxText("That's the committed solution above. Press **Next problem** when you're ready.")]);
+	}
+	if (last?.role === "toolResult" && last.toolName === "problem" && last.isError) {
+		return reply([fauxText("A plain one in between, then."), call("problem", { ...PROBLEMS[0], ...target })]);
+	}
+	if (active && tailText.includes(THINKING)) {
+		if (/Rocq verdict: passes/.test(tailText)) {
+			return reply([call("conclude", { outcome: "solved", verdict: "Rocq accepts the proof.", rung: null, missClass: null, retest: false })]);
+		}
+		if (/Rocq verdict: does not pass/.test(tailText)) {
+			return reply([fauxText("Rocq still reports a problem — read it in your submission card. Hint: this goal is linear arithmetic.")]);
+		}
+		return reply([call("conclude", { outcome: "movedOn", verdict: "Read your trace.", rung: null, missClass: null, retest: false })]);
+	}
+	if (!active && (posed.length === 0 || tailText.includes(NEXT_PROBLEM))) {
+		return reply([fauxText(posed.length === 0 ? "A Rocq one to start." : "Another Rocq one."), call("problem", { ...ROCQ_PROBLEM, ...target })]);
+	}
+	return reply([fauxText(active ? "Edit the proof and submit when Rocq accepts it." : "Press **Next problem** to continue.")]);
 }
 
 function unknownRole(context) {

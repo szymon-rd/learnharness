@@ -299,6 +299,7 @@ export function newThinkingMessage(
 	lean?: PracticeLeanSubmission,
 	tla?: PracticeTlaSubmission,
 	cpp?: PracticeCppSubmission,
+	rocq?: PracticeRocqSubmission,
 ): LhMarkerMessage {
 	// A Lean problem's submission (owner, 2026-10-30) carries the proof and
 	// the server's verdict: the model reads them right under the thinking.
@@ -318,13 +319,22 @@ export function newThinkingMessage(
 		parts.push(`Submitted C++ solution:\n${cpp.solution || "(empty)"}`);
 		parts.push(cpp.verdict ? cppVerdictLines(cpp) : "Test verdict: not checked (no verdict for this submission).");
 	}
+	// A Rocq problem's submission (owner, 2026-11-12), like Lean's.
+	if (rocq) {
+		parts.push(`Submitted Rocq proof:\n${rocq.proof || "(empty)"}`);
+		if (rocq.verdict) {
+			const lines = [`Rocq verdict: ${rocq.verdict.passed ? "passes" : "does not pass"} — ${rocq.summary ?? ""}`.trim()];
+			for (const e of rocq.verdict.errors) lines.push(`- ${e.line > 0 ? `proof line ${e.line}` : "statement"}: ${e.message}`);
+			parts.push(lines.join("\n"));
+		} else parts.push("Rocq verdict: not checked (no Rocq verdict for this submission).");
+	}
 	return {
 		id: newMessageId(),
 		role: "custom",
 		customType: "practice-thinking",
 		content: parts.join("\n\n"),
 		display: true,
-		details: { problemCallId, text, ...(lean ? { lean } : {}), ...(tla ? { tla } : {}), ...(cpp ? { cpp } : {}) },
+		details: { problemCallId, text, ...(lean ? { lean } : {}), ...(tla ? { tla } : {}), ...(cpp ? { cpp } : {}), ...(rocq ? { rocq } : {}) },
 		timestamp: Date.now(),
 	};
 }
@@ -358,6 +368,13 @@ function tlaVerdictLines(tla: PracticeTlaSubmission): string {
 	if (view.unreachable) lines.push(`Not reachable: ${(view.unreachable as string[]).join("; ")}`);
 	if (view.review) lines.push(String(view.review));
 	return lines.join("\n");
+}
+
+/** A practice submission's Rocq half: the proof and the server's verdict. */
+export interface PracticeRocqSubmission {
+	proof: string;
+	verdict?: import("./rocq-cell.ts").RocqVerdict;
+	summary?: string;
 }
 
 /** A practice submission's C++ half: the solution and the server's verdict. */
@@ -834,7 +851,7 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 	if (message.role === "toolResult") {
 		if (!(QUESTION_TOOLS as readonly string[]).includes(message.toolName) || message.isError || message.details == null || (message.details as { dismissed?: boolean }).dismissed) return "neutral";
 		const details = message.details as Partial<QuestionAnswerData>;
-		if (!["quiz", "ask", "explain", "lean", "tla", "cpp"].includes(details.kind ?? "") || typeof details.questionText !== "string" || typeof details.dontKnow !== "boolean" || !Array.isArray(details.answers) || typeof details.answeredAt !== "string") return "unrecognizable";
+		if (!["quiz", "ask", "explain", "lean", "tla", "cpp", "rocq"].includes(details.kind ?? "") || typeof details.questionText !== "string" || typeof details.dontKnow !== "boolean" || !Array.isArray(details.answers) || typeof details.answeredAt !== "string") return "unrecognizable";
 		const calls = history.flatMap((m) => m.role === "assistant" ? m.content.filter((b) => b.type === "toolCall" && b.id === message.toolCallId) : []);
 		return calls.length === 1 && calls[0]?.type === "toolCall" && calls[0].name === message.toolName ? "learner" : "unrecognizable";
 	}

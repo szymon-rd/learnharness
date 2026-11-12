@@ -11,9 +11,11 @@ import { ThinkingChip } from "@/components/thinking-chip";
 import { cn } from "@/lib/utils";
 import { LeanCell, type LeanCellStatus } from "@/components/lean/lean-cell";
 import { parseLeanExerciseInput, TaskFold } from "@/components/lean/lean-dock";
-import { cppExerciseFromInput, resolveLeanExercise, tlaExerciseFromInput } from "@/src/core";
+import { cppExerciseFromInput, resolveLeanExercise, resolveRocqExercise, tlaExerciseFromInput } from "@/src/core";
 import { TlaCell, type TlaCellStatus } from "@/components/tla/tla-cell";
 import { CppCell, type CppCellStatus } from "@/components/cpp/cpp-cell";
+import { RocqCell, type RocqCellStatus } from "@/components/rocq/rocq-cell";
+import { parseRocqExerciseInput } from "@/components/rocq/rocq-dock";
 
 /** What a code problem's submission carries besides the thinking: the
  *  Lean proof or the TLA+ solution (the server adds the verdict). */
@@ -21,6 +23,7 @@ export interface PracticeCodeSubmission {
 	proof?: string;
 	solution?: string;
 	cppSolution?: string;
+	rocqProof?: string;
 }
 
 /**
@@ -48,7 +51,7 @@ export interface PracticeDockProps {
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
 	 *  mode badge would edge toward announcing the target; dropped). */
-	input: { statement: string; lean?: unknown; tla?: unknown; cpp?: unknown };
+	input: { statement: string; lean?: unknown; tla?: unknown; cpp?: unknown; rocq?: unknown };
 	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
 	chatId?: string;
 	/** Collapse state, owned by the DockOverlay. */
@@ -90,7 +93,15 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 	const cpp = useMemo(() => (lean || tla || !input.cpp ? null : cppExerciseFromInput(input.cpp, input.statement)), [lean, tla, input.cpp, input.statement]);
 	const cppSolutionRef = useRef(cpp?.starter ?? "");
 	const [cppStatus, setCppStatus] = useState<CppCellStatus>("compiling");
-	const code = lean !== null || tla !== null || cpp !== null;
+	// A Rocq problem (owner, 2026-11-12): the Rocq cell, like Lean's.
+	const rocq = useMemo(() => {
+		if (lean || tla || cpp || !input.rocq) return null;
+		const parsed = parseRocqExerciseInput({ question: input.statement, ...(input.rocq as object) });
+		return parsed ? resolveRocqExercise(parsed) : null;
+	}, [lean, tla, cpp, input.rocq, input.statement]);
+	const rocqProofRef = useRef(rocq?.starter ?? "");
+	const [rocqStatus, setRocqStatus] = useState<RocqCellStatus>("connecting");
+	const code = lean !== null || tla !== null || cpp !== null || rocq !== null;
 	// Phones (owner, 2026-11-01): "Your thinking" starts as a chip beside
 	// Submit; dictation fills it unseen, a tap expands it.
 	const phone = useIsPhone();
@@ -122,6 +133,7 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 		if (lean) onSubmit(text, { proof: proofRef.current });
 		else if (tla) onSubmit(text, { solution: solutionRef.current });
 		else if (cpp) onSubmit(text, { cppSolution: cppSolutionRef.current });
+		else if (rocq) onSubmit(text, { rocqProof: rocqProofRef.current });
 		else onSubmit(text);
 	};
 
@@ -195,6 +207,23 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 							onStatus={setTlaStatus}
 							onEditingChange={setEditing}
 							foldHead={fold}
+						/>
+					</div>
+				)}
+				{rocq && (
+					<div className={fold ? undefined : "mt-3"}>
+						<RocqCell
+							exercise={rocq}
+							cellId={problemCallId}
+							// The dock unmounts the cell while collapsed: restore the
+							// learner's last proof, not the starter.
+							initialProof={rocqProofRef.current}
+							onProofChange={(p) => {
+								rocqProofRef.current = p;
+							}}
+							onStatus={setRocqStatus}
+							onEditingChange={setEditing}
+							hidePrelude={fold}
 						/>
 					</div>
 				)}
@@ -281,6 +310,10 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 						) : lean ? (
 							<span className={cn(leanStatus === "passes" && "text-emerald-700 dark:text-emerald-400")}>
 								{leanStatus === "passes" ? "Lean accepts this proof." : "Submit sends your proof and thinking."}
+							</span>
+						) : rocq ? (
+							<span className={cn(rocqStatus === "passes" && "text-emerald-700 dark:text-emerald-400")}>
+								{rocqStatus === "passes" ? "Rocq accepts this proof." : "Submit sends your proof and thinking."}
 							</span>
 						) : cpp ? (
 							<span className={cn(cppStatus === "compiles" && "text-emerald-700 dark:text-emerald-400")}>

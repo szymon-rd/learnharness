@@ -1,0 +1,13 @@
+{
+ "exercise": {
+  "question": "q",
+  "statement": "Lemma qa_add_comm (a b : nat) : a + b = b + a."
+ },
+ "proof": "Proof.\n  admit.\nQed.",
+ "result": {
+  "exitCode": 1,
+  "timedOut": false,
+  "ms": 276,
+  "output": "File \"./Check.v\", line 6, characters 0-4:\nError:  (in proof qa_add_comm): Attempt to save an incomplete proof\n(the proof term is not complete because of given up (admitted) goals).\nIf this is really what you want to do, use Admitted in place of Qed.\n\n"
+ }
+}

@@ -22,6 +22,7 @@ import { stripModelValueDebris } from "./value-debris.ts";
 import type { LeanVerdict } from "./lean-cell.ts";
 import type { TlaVerdict } from "./tla-cell.ts";
 import { cppAnswerForModel, type CppVerdict } from "./cpp-cell.ts";
+import type { RocqVerdict } from "./rocq-cell.ts";
 
 // ─── shared types ───────────────────────────────────────────────────────────
 
@@ -367,7 +368,7 @@ export const QUIZ_TOOL_NAMES = ["quiz", "explain"] as const;
 /** Every teach-phase tool whose `nodeId` names the plan node it checks:
  *  the quizzing tools plus the Lean code cell (owner, 2026-10-30). The
  *  teach seam and the plan-position fold read these. */
-export const NODE_TAGGED_TOOL_NAMES = [...QUIZ_TOOL_NAMES, "lean_exercise", "tla_exercise", "cpp_exercise"] as const;
+export const NODE_TAGGED_TOOL_NAMES = [...QUIZ_TOOL_NAMES, "lean_exercise", "tla_exercise", "cpp_exercise", "rocq_exercise"] as const;
 
 /** The TEACHER's quiz declaration (base + the position field). */
 export const quizInputSchema = quizInputObject;
@@ -412,7 +413,7 @@ export interface OptionAnswer {
 	index: number; // 1-based display index
 }
 
-export type QuestionKind = "quiz" | "ask" | "explain" | "lean" | "tla" | "cpp";
+export type QuestionKind = "quiz" | "ask" | "explain" | "lean" | "tla" | "cpp" | "rocq";
 
 /** A Lean code cell's answer (kind "lean"): the learner's proof and the
  *  server's verdict on it (src/server/lean-answer.ts — never the client's). */
@@ -447,6 +448,14 @@ export interface CppAnswerDetail {
 	summary: string;
 	/** The tutor's reference solution, for the answered card. */
 	referenceSolution?: string;
+}
+/** A Rocq code cell's answer (kind "rocq"), like Lean's: the learner's
+ *  proof and the server's verdict (src/server/rocq-answer.ts). */
+export interface RocqAnswerDetail {
+	proof: string;
+	verdict: RocqVerdict;
+	summary: string;
+	referenceProof?: string;
 }
 export type SelectMode = "single-select" | "multi-select";
 export type QuestionMode = SelectMode | "text";
@@ -517,6 +526,8 @@ export interface QuestionAnswerData {
 	tla?: TlaAnswerDetail;
 	/** cpp only: the solution and the server's verdict. */
 	cpp?: CppAnswerDetail;
+	/** rocq only: the proof and the server's verdict. */
+	rocq?: RocqAnswerDetail;
 	answeredAt: string;
 }
 
@@ -862,6 +873,13 @@ export function compactAnswerForModel(ad: QuestionAnswerData): Record<string, un
 	if (ad.tla) Object.assign(out, tlaAnswerForModel(ad.tla));
 	// C++ code cell (owner, 2026-11-09): the same, with cpp_review.
 	if (ad.cpp) Object.assign(out, cppAnswerForModel(ad.cpp.solution, ad.cpp.verdict, ad.cpp.summary, "exercise"));
+	// Rocq code cell (owner, 2026-11-12): like Lean's, the proof and the verdict.
+	if (ad.rocq) {
+		out.proof = ad.rocq.proof;
+		out.verdict = ad.rocq.summary;
+		if (ad.rocq.verdict.errors.length) out.errors = ad.rocq.verdict.errors;
+		if (ad.rocq.verdict.disallowedAxioms?.length) out.disallowedAxioms = ad.rocq.verdict.disallowedAxioms;
+	}
 	return out;
 }
 

@@ -1,5 +1,5 @@
 # LearnHarness on your own server: the app, Caddy for automatic HTTPS, and
-# Lean + Mathlib, the TLA+ tools and C++ for code cells.
+# Lean + Mathlib, the TLA+ tools, C++ and Rocq + Iris for code cells.
 #   cp .env.example .env    # set LH_HOST
 #   docker compose up -d --build
 # See docs/deploy-vps.md.
@@ -14,11 +14,12 @@ services:
       LH_LEAN_URL: http://lean:3300
       LH_TLA_URL: http://tla:3400
       LH_CPP_URL: http://cpp:3500
+      LH_ROCQ_URL: http://rocq:3600
     volumes:
       - learnharness-data:/data
     # Chromium (interactive demos) needs more shared memory than Docker's 64 MB default.
     shm_size: 1gb
-    networks: [default, lean, tla, cpp]
+    networks: [default, lean, tla, cpp, rocq]
 
   # Lean 4 + Mathlib for code cells (deploy/lean). No internet access (the
   # "lean" network is internal), an unprivileged user, no capabilities and a
@@ -83,6 +84,25 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
 
+  # Rocq 9 + Iris + HeapLang for code cells (deploy/rocq), like Lean: the
+  # coq-lsp WebSocket (through Caddy, paired devices only) and one-shot
+  # checks for the app. No internet, an unprivileged user, no capabilities,
+  # a memory cap.
+  rocq:
+    image: learnharness-rocq:${ROCQ_TAG:-local}
+    build: ./rocq
+    restart: unless-stopped
+    environment:
+      LH_PUBLIC_URL: https://${LH_HOST:?Set LH_HOST in deploy/.env (see .env.example)}
+      ROCQ_MAX_SESSIONS: ${ROCQ_MAX_SESSIONS:-2}
+    networks: [rocq]
+    tmpfs:
+      - /tmp:size=256m
+    mem_limit: ${ROCQ_MEM_LIMIT:-1500m}
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
   caddy:
     image: caddy:2.10
     restart: unless-stopped
@@ -98,7 +118,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
-    networks: [default, lean]
+    networks: [default, lean, rocq]
 
 networks:
   default:
@@ -107,6 +127,8 @@ networks:
   tla:
     internal: true
   cpp:
+    internal: true
+  rocq:
     internal: true
 
 volumes:

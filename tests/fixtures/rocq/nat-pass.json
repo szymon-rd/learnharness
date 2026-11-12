@@ -1,0 +1,13 @@
+{
+ "exercise": {
+  "question": "q",
+  "statement": "Lemma qa_add_comm (a b : nat) : a + b = b + a."
+ },
+ "proof": "Proof.\n  lia.\nQed.",
+ "result": {
+  "exitCode": 0,
+  "timedOut": false,
+  "ms": 650,
+  "output": "Closed under the global context\n"
+ }
+}

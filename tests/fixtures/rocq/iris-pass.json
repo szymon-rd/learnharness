@@ -1,0 +1,14 @@
+{
+ "exercise": {
+  "question": "q",
+  "prelude": "From iris.proofmode Require Import proofmode.\nFrom iris.base_logic Require Import iprop.",
+  "statement": "Lemma qa_sep_comm {Σ} (P Q : iProp Σ) : P ∗ Q ⊢ Q ∗ P."
+ },
+ "proof": "Proof.\n  iIntros \"[HP HQ]\".\n  iFrame.\nQed.",
+ "result": {
+  "exitCode": 0,
+  "timedOut": false,
+  "ms": 1137,
+  "output": "Closed under the global context\n"
+ }
+}

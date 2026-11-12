@@ -1,0 +1,13 @@
+{
+ "exercise": {
+  "question": "q",
+  "statement": "Lemma qa_add_comm (a b : nat) : a + b = b + a."
+ },
+ "proof": "Proof.\nAdmitted.",
+ "result": {
+  "exitCode": 0,
+  "timedOut": false,
+  "ms": 282,
+  "output": "Axioms:\nqa_add_comm : forall a b : nat, a + b = b + a\n"
+ }
+}

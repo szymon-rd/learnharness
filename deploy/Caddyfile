@@ -24,6 +24,16 @@
 		reverse_proxy lean:3300
 	}
 
+	# Rocq code cells: the same for the coq-lsp WebSocket.
+	handle /rocq/lsp {
+		forward_auth learnharness:3210 {
+			uri /api/rocq/authorize
+			header_up -Upgrade
+			header_up -Connection
+		}
+		reverse_proxy rocq:3600
+	}
+
 	handle {
 		reverse_proxy learnharness:3210
 	}

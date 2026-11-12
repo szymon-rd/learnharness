@@ -42,11 +42,14 @@ export const LEAN_SYMBOL_BAR: readonly string[] = [
  * (`\to`), return the replacement and how many characters it replaces.
  * Called when the user types a separator (space, Tab, `\`, `(`…).
  */
-export function expandAbbreviationBefore(textBeforeCursor: string): { from: number; insert: string } | null {
+export function expandAbbreviationBefore(
+	textBeforeCursor: string,
+	table: Readonly<Record<string, string>> = LEAN_ABBREVIATIONS,
+): { from: number; insert: string } | null {
 	const slash = textBeforeCursor.lastIndexOf("\\");
 	if (slash < 0) return null;
 	const name = textBeforeCursor.slice(slash + 1);
 	if (!name || /\s/.test(name)) return null;
-	const symbol = LEAN_ABBREVIATIONS[name];
+	const symbol = table[name];
 	return symbol ? { from: slash, insert: symbol } : null;
 }

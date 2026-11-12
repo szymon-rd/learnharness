@@ -9,6 +9,7 @@ import { ToolContentResponse } from "@/components/ai-elements/message";
 import { LeanAnsweredCard } from "@/components/lean/lean-answered-card";
 import { TlaAnsweredCard } from "@/components/tla/tla-answered-card";
 import { CppAnsweredCard } from "@/components/cpp/cpp-answered-card";
+import { RocqAnsweredCard } from "@/components/rocq/rocq-answered-card";
 import type { QuestionAnswerData } from "@/src/core";
 import { answerForPresentation, parseAskInput, parseQuizInput } from "@/src/core";
 
@@ -30,6 +31,7 @@ export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, in
 	if (answer.kind === "lean" && !answer.dismissed) return <LeanAnsweredCard answer={answer} />;
 	if (answer.kind === "tla" && !answer.dismissed) return <TlaAnsweredCard answer={answer} toolCallId={toolCallId} />;
 	if (answer.kind === "cpp" && !answer.dismissed) return <CppAnsweredCard answer={answer} toolCallId={toolCallId} />;
+	if (answer.kind === "rocq" && !answer.dismissed) return <RocqAnsweredCard answer={answer} />;
 	if (answer.dismissed) {
 		return (
 			<div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">

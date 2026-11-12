@@ -40,6 +40,8 @@ import { checkTlaSolution, resolveTlaExercise, tlaExerciseProblems, type TlaChec
 import { referenceProblems, tlaExerciseFields } from "./tla.ts";
 import { checkCppSolution, cppExerciseProblems, resolveCppExercise, type CppChecker } from "../../core/cpp-cell.ts";
 import { cppExerciseFields, cppReferenceProblems } from "./cpp.ts";
+import { checkRocqProof, resolveRocqExercise, rocqExerciseProblems, type RocqChecker } from "../../core/rocq-cell.ts";
+import { rocqExerciseFields, rocqReferenceProblems } from "./rocq.ts";
 
 
 /** The record-reading context the gates need (the plan-tools idiom). */
@@ -69,6 +71,8 @@ export interface PracticeToolContext {
 	tla?: { check: TlaChecker; tlaSourced: (propositionIds: string[]) => boolean };
 	/** C++ problems (owner, 2026-11-09): the same rule with the C++ service. */
 	cpp?: { check: CppChecker; cppSourced: (propositionIds: string[]) => boolean };
+	/** Rocq problems (owner, 2026-11-12): the same rule with the Rocq service. */
+	rocq?: { check: RocqChecker; rocqSourced: (propositionIds: string[]) => boolean };
 }
 
 /** TURN-SCOPED GATE STATE (the BKT incident, 2026-10-05): the gates used
@@ -176,14 +180,29 @@ const cppProblemDescription =
 
 type CppBlock = Static<typeof problemCppBlock>;
 
+/** The Rocq block of a problem (owner, 2026-11-12), like Lean's: the learner
+ *  proves the locked statement in a Rocq cell. */
+const problemRocqBlock = Type.Object({
+	...rocqExerciseFields,
+	learnerAsked: Type.Optional(Type.Boolean({ description: "True only when the learner asked for another code problem right after one." })),
+});
+
+const rocqProblemDescription =
+	"Make this a Rocq problem: the learner writes the proof in a Rocq code cell (Rocq 9, Iris, HeapLang; live goals and " +
+	"errors); each submission brings their proof and Rocq's verdict. Only for material from Rocq sessions; never two code " +
+	"problems in a row unless they asked (learnerAsked).";
+
+type RocqBlock = Static<typeof problemRocqBlock>;
+
 /** The problem schema for the code-cell languages this turn may pose. */
-function problemSchemaFor(withLean: boolean, withTla: boolean, withCpp: boolean) {
-	if (!withLean && !withTla && !withCpp) return problemInputObject;
+function problemSchemaFor(withLean: boolean, withTla: boolean, withCpp: boolean, withRocq: boolean) {
+	if (!withLean && !withTla && !withCpp && !withRocq) return problemInputObject;
 	return Type.Object({
 		...problemInputObject.properties,
 		...(withLean ? { lean: problemInputWithLean.properties.lean } : {}),
 		...(withTla ? { tla: Type.Optional(Type.Object(problemTlaBlock.properties, { description: tlaProblemDescription })) } : {}),
 		...(withCpp ? { cpp: Type.Optional(Type.Object(problemCppBlock.properties, { description: cppProblemDescription })) } : {}),
+		...(withRocq ? { rocq: Type.Optional(Type.Object(problemRocqBlock.properties, { description: rocqProblemDescription })) } : {}),
 	});
 }
 
@@ -207,7 +226,7 @@ function previousProblemWasCode(messages: readonly LhMessage[], toolCallId: stri
 		for (let j = m.content.length - 1; j >= 0; j--) {
 			const b = m.content[j] as { type?: string; id?: string; name?: string; arguments?: Record<string, unknown> };
 			if (b.type === "toolCall" && b.name === "problem" && b.id !== toolCallId) {
-				return ["lean", "tla", "cpp"].some((k) => b.arguments?.[k] !== undefined && b.arguments[k] !== null);
+				return ["lean", "tla", "cpp", "rocq"].some((k) => b.arguments?.[k] !== undefined && b.arguments[k] !== null);
 			}
 		}
 	}
@@ -297,6 +316,27 @@ async function cppProblemProblems(
 	return [];
 }
 
+/** The Rocq gates and the reference-proof check for one pose. */
+async function rocqProblemProblems(ctx: PracticeToolContext, toolCallId: string, block: RocqBlock, targets: string[]): Promise<string[]> {
+	const rocq = ctx.rocq!;
+	const messages = ctx.chatStore.getChat(ctx.chatId)?.messages ?? [];
+	const problems = rocqExerciseProblems({ question: "problem", ...block });
+	if (!rocq.rocqSourced([...sessionPickIds(messages), ...targets])) {
+		problems.push("Rocq problems are only for material from Rocq sessions; none of this session's propositions came from one. Pose it without `rocq`.");
+	}
+	if (previousProblemWasCode(messages, toolCallId) && block.learnerAsked !== true) {
+		problems.push("The previous problem was already a code problem. Mix them in: pose one without `rocq` first, unless the learner asked for another (then set rocq.learnerAsked: true).");
+	}
+	if (problems.length) return problems;
+	try {
+		const verdict = await checkRocqProof(rocq.check, resolveRocqExercise({ question: "", ...block }), block.referenceProof);
+		if (!verdict.passed) return rocqReferenceProblems("rocq.referenceProof", verdict);
+	} catch (err) {
+		return [`Rocq is unavailable right now (${(err as Error).message}). Pose the problem without \`rocq\`.`];
+	}
+	return [];
+}
+
 export function problemTool(
 	gate: PracticeGate,
 	graphNodes?: PracticeToolContext["graphNodes"],
@@ -305,7 +345,8 @@ export function problemTool(
 	const withLean = ctx?.lean !== undefined;
 	const withTla = ctx?.tla !== undefined;
 	const withCpp = ctx?.cpp !== undefined;
-	const schema = problemSchemaFor(withLean, withTla, withCpp);
+	const withRocq = ctx?.rocq !== undefined;
+	const schema = problemSchemaFor(withLean, withTla, withCpp, withRocq);
 	return {
 		name: "problem",
 		label: "problem",
@@ -381,6 +422,13 @@ export function problemTool(
 				if (!withCpp) return invalidInputResult("problem", ["C++ problems are off here (the Code cells setting or the C++ checker is unavailable). Pose it without `cpp`."]);
 				const cppProblems = await cppProblemProblems(ctx!, toolCallId, cppBlock, input.target ?? []);
 				if (cppProblems.length) return invalidInputResult("problem", cppProblems);
+			}
+			const rocqBlock = (input as { rocq?: RocqBlock }).rocq;
+			if (rocqBlock) {
+				if (leanBlock || tlaBlock || cppBlock) return invalidInputResult("problem", ["A problem has at most one code cell: lean, tla, cpp or rocq."]);
+				if (!withRocq) return invalidInputResult("problem", ["Rocq problems are off here (the Code cells setting or Rocq is unavailable). Pose it without `rocq`."]);
+				const rocqProblems = await rocqProblemProblems(ctx!, toolCallId, rocqBlock, input.target ?? []);
+				if (rocqProblems.length) return invalidInputResult("problem", rocqProblems);
 			}
 			gate.problemActive = true;
 			return problemResult();

@@ -5,7 +5,8 @@ This puts the LearnHarness server on a Linux server you rent, so the Android app
 ```
  Android app ──HTTPS──▶ Caddy (ports 80/443) ──▶ LearnHarness (phone server) ──▶ /data volume
                         on your VPS     │                                         sessions, graph, keys
-                                        └─/lean/lsp─▶ Lean + Mathlib (code cells, no internet)
+                                        ├─/lean/lsp─▶ Lean + Mathlib (code cells, no internet)
+                                        └─/rocq/lsp─▶ Rocq + Iris (code cells, no internet)
                                 LearnHarness ──internal──▶ TLA+ tools: SANY, TLC, PlusCal (code cells, no internet)
                                 LearnHarness ──internal──▶ C++: g++ with sanitizers (code cells, no internet)
 ```
@@ -104,6 +105,15 @@ The `cpp` service compiles and runs C++ exercises (g++ 14, C++20, with AddressSa
 - A submission passes when it compiles and every test passes, hidden ones included: no failed check, no memory error or undefined behavior caught by the sanitizers, no crash, and each test within 5 s (`CPP_TEST_TIMEOUT_SECONDS`). Warnings never fail. The tutor then judges whether the solution does what the task asked and can overrule a pass.
 - Learner code runs in this container: no internet, a normal user without extra privileges, a read-only filesystem except `/tmp`, a memory cap (`CPP_MEM_LIMIT`, default `1g`) and a process cap (a fork bomb stops at the limit and is cleaned up after the test). Malicious code can at worst crash the container, which restarts. Caddy does not route it: only the app calls it.
 
+## Rocq code cells
+
+The `rocq` service runs Rocq 9 with Iris and HeapLang for proof exercises, built like the Lean cells: the coq-lsp language server (through Caddy at `/rocq/lsp`, paired devices only) for live errors and goals, and one-shot checks for the app. The same **Code cells: Mixed in** setting turns them on; the tutor uses them only in sessions whose plan is marked as a Rocq topic (Rocq or Iris), and never two code cells in a row unless you ask. Practice sessions get Rocq problems for material from Rocq sessions.
+
+- In the cell, the `Require` lines and the lemma statement are locked; you write the proof (`Proof. … Qed.`) below. The goals panel shows the goals at the cursor; in the Iris proof mode they include the spatial context (`"HP" : P`). Type `\sep`, `\wand`, `\later`, `\box`… followed by a space for `∗`, `-∗`, `▷`, `□` (wider screens also have a symbol bar; phones have a Tab key in the cell's header).
+- When you submit, the server checks your proof against the exact statement: no error, not `Admitted`, and no axiom declared in the cell (the standard library's axioms such as `classic` are fine).
+- The container has no internet access, runs as a normal user without extra privileges, and has a memory cap (`ROCQ_MEM_LIMIT`, default `1500m`); up to two language servers run at once (`ROCQ_MAX_SESSIONS`). On start it loads Iris once (about a second when the files are cached; `docker compose logs rocq` shows "Iris loaded").
+- The image is large (about 8 GB: the OCaml toolchain, Rocq, coq-lsp and Iris built from source) and its first build takes 15–20 minutes.
+
 ## Day to day
 
 | Task | Command (in `deploy/`) |
@@ -151,4 +161,5 @@ From then on the server copy and the desktop copy are separate. They do not sync
 - **A code cell says "Lean offline"** or the badge never leaves "Starting Lean…": check `docker compose ps lean` and `docker compose logs lean`. If every check times out after 120 s, Lean's memory cap is below Mathlib's size (see above). If the container was killed for memory, raise `LEAN_MEM_LIMIT` in `deploy/.env` (and the server's RAM).
 - **A TLA+ cell says "Checker offline"**: check `docker compose ps tla` and `docker compose logs tla`. "TLC ran out of time" means the model's state space is too large for the time budget.
 - **A C++ cell says "Checker offline"**: check `docker compose ps cpp` and `docker compose logs cpp`.
+- **A Rocq cell says "Rocq offline"**: check `docker compose ps rocq` and `docker compose logs rocq` (`ROCQ_DEBUG=1` in the service's environment logs every language-server message).
 - **The build runs out of memory** on a 1 GB server. Add swap (`fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`) or use a bigger plan.

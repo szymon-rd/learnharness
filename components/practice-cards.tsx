@@ -61,6 +61,8 @@ export interface PracticeThinkingData {
 	tla?: { solution: string; summary?: string; verdict?: TlaVerdict };
 	/** A C++ problem's submission: the solution and the server's verdict. */
 	cpp?: { solution: string; summary?: string; verdict?: CppVerdict };
+	/** A Rocq problem's submission, like Lean's. */
+	rocq?: { proof: string; summary?: string; verdict?: { passed: boolean; errors: { line: number; message: string }[] } };
 }
 
 export function ProblemCard({ part }: ArtifactPartProps) {
@@ -302,18 +304,19 @@ export function ThinkingCard({ data }: { data: PracticeThinkingData }) {
 	// 50%-italic quote block on expand. Legacy records' commit flag is
 	// deliberately unread (one lane now). A TRANSCRIPT row (owner round,
 	// 2026-10-07): full-width band + rail, arriving expanded.
-	const lean = data.lean;
+	const lean = data.lean ?? (data.rocq ? { ...data.rocq } : undefined);
+	const prover = data.rocq ? "Rocq" : "Lean";
 	const tla = data.tla;
 	const cpp = data.cpp;
 	return (
 		<>
 			{data.text.trim() && <ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} defaultOpen />}
 			{lean && (
-				<div className="my-1 rounded-xl border bg-card p-4" data-testid="lean-submission-card">
+				<div className="my-1 rounded-xl border bg-card p-4" data-testid="lean-submission-card" data-prover={prover}>
 					<div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 						Your proof
 						{!lean.verdict ? (
-							<span className="rounded bg-muted px-1.5 py-0.5 normal-case">checking with Lean…</span>
+							<span className="rounded bg-muted px-1.5 py-0.5 normal-case">checking with {prover}…</span>
 						) : lean.verdict.passed ? (
 							<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">passes</span>
 						) : (

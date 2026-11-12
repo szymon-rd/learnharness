@@ -1,0 +1,14 @@
+{
+ "exercise": {
+  "question": "q",
+  "prelude": "From Stdlib Require Import Classical.",
+  "statement": "Lemma qa_lem (P : Prop) : P \\/ ~ P."
+ },
+ "proof": "Proof.\n  apply classic.\nQed.",
+ "result": {
+  "exitCode": 0,
+  "timedOut": false,
+  "ms": 158,
+  "output": "Axioms:\nclassic : forall P : Prop, P \\/ ~ P\n"
+ }
+}

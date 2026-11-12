@@ -125,6 +125,21 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 		return { heading: "Lean exercise", body };
 	}
 
+	if (result.toolName === "rocq_exercise") {
+		// A Rocq code cell (owner, 2026-11-12): the task, the proof and Rocq's verdict.
+		const rocq = (result.details as { rocq?: { proof?: string; summary?: string; verdict?: { passed?: boolean } } } | undefined)?.rocq;
+		const question = typeof out?.questionText === "string" && out.questionText ? out.questionText : "(no question text)";
+		const body = [`**Q:** ${question}`];
+		if (out?.dismissed === true) body.push("The learner skipped this exercise.");
+		else if (rocq) {
+			body.push(`${rocq.verdict?.passed ? "Rocq accepted the learner's proof." : "Rocq did not accept the learner's proof."}${rocq.summary ? ` ${rocq.summary}` : ""}`);
+			if (typeof rocq.proof === "string" && rocq.proof.trim()) body.push("```coq\n" + rocq.proof.replace(/\s+$/, "") + "\n```");
+		}
+		const thinking = (result.details as { thinking?: string } | undefined)?.thinking;
+		if (typeof thinking === "string" && thinking) body.push(`*(the learner's thinking: ${thinking})*`);
+		return { heading: "Rocq exercise", body };
+	}
+
 	if (result.toolName === "tla_exercise") {
 		// A TLA+ code cell (owner, 2026-11-05): the task, the learner's
 		// solution and TLC's verdict. The teacher's review follows as its

@@ -30,6 +30,8 @@ import { tlaExerciseToolFor, tlaReviewToolFor } from "./tools/tla.ts";
 import type { TlaChecker } from "../core/tla-cell.ts";
 import { cppExerciseToolFor, cppReviewToolFor } from "./tools/cpp.ts";
 import type { CppChecker } from "../core/cpp-cell.ts";
+import { rocqExerciseToolFor } from "./tools/rocq.ts";
+import type { RocqChecker } from "../core/rocq-cell.ts";
 import type { GraphStore } from "../core/ports.ts";
 
 export { jobTools };
@@ -419,6 +421,10 @@ export interface TeacherToolContext extends PlanToolContext {
 	 *  Present = cpp_exercise and cpp_review are registered and plan_init's
 	 *  codeCells offers "cpp". */
 	cpp?: CppChecker;
+	/** Rocq code cells (owner, 2026-11-12): the same gate with the Rocq
+	 *  service. Present = rocq_exercise is registered and plan_init's
+	 *  codeCells offers "rocq". */
+	rocq?: RocqChecker;
 }
 
 /**
@@ -476,7 +482,7 @@ export function createTeacherTools(
 			ls: lsTool,
 			find: findTool,
 			grep: grepTool,
-			...planTools(ctx, { codeCells: [...(ctx.lean ? (["lean"] as const) : []), ...(ctx.tla ? (["tla"] as const) : []), ...(ctx.cpp ? (["cpp"] as const) : [])] }),
+			...planTools(ctx, { codeCells: [...(ctx.lean ? (["lean"] as const) : []), ...(ctx.tla ? (["tla"] as const) : []), ...(ctx.cpp ? (["cpp"] as const) : []), ...(ctx.rocq ? (["rocq"] as const) : [])] }),
 			...(ctx.lean
 				? { lean_exercise: leanExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, lean: ctx.lean }, (nodeId) => nodeIdProblem(ctx, nodeId)) }
 				: {}),
@@ -491,6 +497,9 @@ export function createTeacherTools(
 						cpp_exercise: cppExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, cpp: ctx.cpp }, (nodeId) => nodeIdProblem(ctx, nodeId)),
 						cpp_review: cppReviewToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore }),
 					}
+				: {}),
+			...(ctx.rocq
+				? { rocq_exercise: rocqExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, rocq: ctx.rocq }, (nodeId) => nodeIdProblem(ctx, nodeId)) }
 				: {}),
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),
 		},

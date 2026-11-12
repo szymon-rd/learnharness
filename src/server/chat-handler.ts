@@ -53,6 +53,9 @@ import { tlaChecker } from "./tla-service.ts";
 import { CPP_EXERCISE_TOOL } from "../core/cpp-cell.ts";
 import { CppAnswerError, gradeCppAnswer, gradeCppSolution } from "./cpp-answer.ts";
 import { cppChecker } from "./cpp-service.ts";
+import { ROCQ_EXERCISE_TOOL } from "../core/rocq-cell.ts";
+import { gradeRocqAnswer, gradeRocqProof, RocqAnswerError } from "./rocq-answer.ts";
+import { rocqChecker } from "./rocq-service.ts";
 import { codeCellsEnabled } from "../core/settings-resolution.ts";
 import { gradeLeanAnswer, gradeLeanProof, LeanAnswerError } from "./lean-answer.ts";
 import { leanChecker } from "./lean-service.ts";
@@ -112,6 +115,7 @@ function codeSourcedPropositions(language: CodeCellLanguage, ids: string[]): boo
 const leanSourcedPropositions = (ids: string[]) => codeSourcedPropositions("lean", ids);
 const tlaSourcedPropositions = (ids: string[]) => codeSourcedPropositions("tla", ids);
 const cppSourcedPropositions = (ids: string[]) => codeSourcedPropositions("cpp", ids);
+const rocqSourcedPropositions = (ids: string[]) => codeSourcedPropositions("rocq", ids);
 
 function settlementErrorText(error: unknown): string {
 	return error instanceof TurnPersistenceError ? error.message : "An error occurred.";
@@ -288,6 +292,16 @@ export async function handleChatInput(
 		// TLA+ code cells (owner, 2026-11-05): the same — only the solution
 		// comes from the client; TLC's verdict is computed from the persisted call.
 		// C++ code cells (owner, 2026-11-09): the same, every test run on the server.
+		// Rocq code cells (owner, 2026-11-12): the same as Lean.
+		if (pending?.toolCallId === input.toolCallId && pending.tool === ROCQ_EXERCISE_TOOL) {
+			try {
+				input = { ...input, answer: await gradeRocqAnswer(pending.input, input.answer, rocqChecker()) };
+			} catch (err) {
+				if (err instanceof RocqAnswerError) return Response.json({ error: err.message }, { status: err.status });
+				throw err;
+			}
+			record = stores.chatStore.getChat(chatId) ?? record;
+		}
 		if (pending?.toolCallId === input.toolCallId && pending.tool === CPP_EXERCISE_TOOL) {
 			try {
 				input = { ...input, answer: await gradeCppAnswer(pending.input, input.answer, cppChecker()) };
@@ -363,6 +377,26 @@ export async function handleChatInput(
 			record = stores.chatStore.getChat(chatId) ?? record;
 		} else {
 			const { cppSolution: _drop, ...rest } = input;
+			input = rest;
+		}
+	}
+
+	// Rocq problems: the submission carries the proof; the verdict comes from
+	// the persisted problem call's `rocq` block.
+	if (input.type === "thinking" && input.rocqProof !== undefined) {
+		const active = activeProblemOf(record.messages);
+		const exercise = active?.toolCallId === input.problemCallId ? (active.input as { rocq?: unknown }).rocq : undefined;
+		if (exercise) {
+			try {
+				const graded = await gradeRocqProof(exercise, input.rocqProof, rocqChecker());
+				input = { ...input, rocq: { proof: input.rocqProof, verdict: graded.verdict, summary: graded.summary } };
+			} catch (err) {
+				if (err instanceof RocqAnswerError) return Response.json({ error: err.message }, { status: err.status });
+				throw err;
+			}
+			record = stores.chatStore.getChat(chatId) ?? record;
+		} else {
+			const { rocqProof: _drop, ...rest } = input;
 			input = rest;
 		}
 	}
@@ -609,6 +643,11 @@ export async function handleChatInput(
 							const check = cppChecker();
 							return check && codeCellsEnabled(effective, true) ? { cpp: { check, cppSourced: cppSourcedPropositions } } : {};
 						})(),
+						// Rocq problems (owner, 2026-11-12): the same rule with the Rocq service.
+						...(() => {
+							const check = rocqChecker();
+							return check && codeCellsEnabled(effective, true) ? { rocq: { check, rocqSourced: rocqSourcedPropositions } } : {};
+						})(),
 					},
 					agentOpts,
 				)
@@ -636,6 +675,11 @@ export async function handleChatInput(
 						...(() => {
 							const cpp = cppChecker();
 							return cpp && codeCellsEnabled(effective, true) ? { cpp } : {};
+						})(),
+						// Rocq code cells: the same setting AND the Rocq service.
+						...(() => {
+							const rocq = rocqChecker();
+							return rocq && codeCellsEnabled(effective, true) ? { rocq } : {};
 						})(),
 					},
 					agentOpts,

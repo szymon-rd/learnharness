@@ -704,6 +704,7 @@ export class SessionModel {
 					input.proof !== undefined ? { proof: input.proof } : undefined,
 					input.solution !== undefined ? { solution: input.solution } : undefined,
 					input.cppSolution !== undefined ? { solution: input.cppSolution } : undefined,
+					input.rocqProof !== undefined ? { proof: input.rocqProof } : undefined,
 				),
 				id: localId(),
 			});

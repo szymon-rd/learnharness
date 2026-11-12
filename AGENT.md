@@ -170,6 +170,38 @@ row"; code cells stay on when Lean is down; a confirmation for Stop.
   (`LeanCell` `hidePrelude`, `TaskFold`). Layout changes on blur wait 400 ms so
   a tap on Submit is not moved under the finger.
 
+## 4d. Rocq code cells (12 Nov 2026)
+
+Owner: "add a Rocq kernel the same way the Lean kernel is done (include
+Iris)". So it mirrors Lean exactly: locked prelude + statement, learner
+proof, live language server (coq-lsp) over a WebSocket through Caddy, server
+re-check on submit, no tutor review (Lean has none either).
+
+- **Service** `deploy/rocq/`: `rocq/rocq-prover:9.0` + `coq-lsp 0.2.5+9.0` +
+  `coq-iris(-heap-lang) 4.4.0` (the base image pins ocamlfind 1.9.6; coq-lsp
+  needs >= 1.9.8, so the Dockerfile unpins it and Rocq is rebuilt). Image
+  ~8 GB. `bridge/bridge.mjs` is Lean's bridge with coq-lsp: WS `/rocq/lsp`
+  (documents `file:///cell/<name>.v`; methods allowlisted incl. `proof/goals`),
+  `POST /check {source}` (`rocq compile`), warm-up loading Iris on start
+  (`warming` in /health), `ROCQ_DEBUG=1` logs each message.
+- **Protocol notes**: done-checking is `$/coq/serverStatus` `Idle` (file
+  progress never sends an empty list); goals need `pp_format: "Str"` and
+  `goal_after_tactic: false` (goals before the sentence at the cursor).
+- **Core** `src/core/rocq-cell.ts`: default prelude `From Stdlib Require
+  Import Arith Lia.`, starter `Proof.\nAdmitted.`, check source appends
+  `Print Assumptions <name>.`; fails on errors, Admitted (the lemma itself in
+  the assumptions) or an axiom declared in the learner's proof (library
+  axioms such as `classic` print bare too, so the test is the declaration).
+  `src/core/rocq-abbreviations.ts` (Iris symbols; the Lean expander takes a table).
+- **Server/agent/client**: `src/server/rocq-{service,answer}.ts`,
+  `app/api/rocq/{status,authorize}`, `src/agent/tools/rocq.ts`, practice
+  `problem.rocq` (thinking input `rocqProof`), `components/rocq/`
+  (`rocq-lsp.ts`, `rocq-cell.tsx` from `lean-cell.tsx`).
+- **Tests/CI**: `tests/rocq-cell.test.ts` (fixtures `tests/fixtures/rocq`),
+  `tests/rocq-exercise-tool.test.ts`, `.github/workflows/rocq.yml` (smoke
+  `deploy/rocq/test/smoke.mjs` check + lsp through Caddy, phone QA
+  `tests/e2e/rocq-qa.e2e.mjs`; `tests/e2e/server.mjs` proxies `/rocq/lsp`).
+
 ## 4c. C++ code cells (9 Nov 2026)
 
 Owner decisions: **function + tests** (the learner implements code between a

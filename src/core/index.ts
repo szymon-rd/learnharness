@@ -91,3 +91,6 @@ export * from "./tla-cell.ts";
 // C++ code cells (owner, 2026-11-09): the cell layout, the test program and
 // the verdict. Pure, browser-safe.
 export * from "./cpp-cell.ts";
+// Rocq code cells (owner, 2026-11-12): the cell layout and verdict, like Lean's.
+export * from "./rocq-cell.ts";
+export * from "./rocq-abbreviations.ts";

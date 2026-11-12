@@ -52,3 +52,4 @@ export { tlaServiceUrl, tlaChecker } from "./tla-service.ts";
 export { tlaCellCheckResponse } from "./tla-answer.ts";
 export { cppServiceUrl, cppChecker } from "./cpp-service.ts";
 export { cppCellCheckResponse } from "./cpp-answer.ts";
+export { rocqServiceUrl, rocqChecker } from "./rocq-service.ts";
