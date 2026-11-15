@@ -46,8 +46,7 @@ import {
 	NEXT_PROBLEM_TEXT,
 	THINKING_LABEL,
 } from "./contracts/chat.ts";
-import { compactAnswerForModel, tlaAnswerForModel, type QuestionAnswerData } from "./question-core.ts";
-import { cppAnswerForModel } from "./cpp-cell.ts";
+import { compactAnswerForModel, type QuestionAnswerData } from "./question-core.ts";
 import { activeCompactionOf, keptIndexFor } from "./compaction.ts";
 import { parseQuestionInput } from "./tool-parts.ts";
 import { expandCitationsForModel } from "./citations.ts";
@@ -357,107 +356,16 @@ export function newGraphContextMessage(picks: readonly GraphContextPick[], chain
  *  content label is the single "Your thinking"; `details` keeps the raw
  *  payload for the transcript card. One problem may carry many
  *  submissions. */
-export function newThinkingMessage(
-	problemCallId: string,
-	text: string,
-	images?: readonly ImageContent[],
-	lean?: PracticeLeanSubmission,
-	tla?: PracticeTlaSubmission,
-	cpp?: PracticeCppSubmission,
-	rocq?: PracticeRocqSubmission,
-): LhMarkerMessage {
-	// A Lean problem's submission (owner, 2026-10-30) carries the proof and
-	// the server's verdict: the model reads them right under the thinking.
-	const parts = [text || !(lean || tla || cpp || rocq) ? `${THINKING_LABEL}:\n${text}` : `${THINKING_LABEL}: (none)`];
-	if (lean) {
-		parts.push(`Submitted Lean proof:\n${lean.proof || "(empty)"}`);
-		const verdict = lean.verdict ? leanVerdictLines(lean) : "Lean verdict: not checked (no Lean verdict for this submission).";
-		parts.push(verdict);
-	}
-	// A TLA+ problem's submission (owner, 2026-11-05): the solution and TLC's verdict.
-	if (tla) {
-		parts.push(`Submitted TLA+ solution:\n${tla.solution || "(empty)"}`);
-		parts.push(tla.verdict ? tlaVerdictLines(tla) : "TLC verdict: not checked (no verdict for this submission).");
-	}
-	// A C++ problem's submission (owner, 2026-11-09): the solution and the tests' verdict.
-	if (cpp) {
-		parts.push(`Submitted C++ solution:\n${cpp.solution || "(empty)"}`);
-		parts.push(cpp.verdict ? cppVerdictLines(cpp) : "Test verdict: not checked (no verdict for this submission).");
-	}
-	// A Rocq problem's submission (owner, 2026-11-12), like Lean's.
-	if (rocq) {
-		parts.push(`Submitted Rocq proof:\n${rocq.proof || "(empty)"}`);
-		if (rocq.verdict) {
-			const lines = [`Rocq verdict: ${rocq.verdict.passed ? "passes" : "does not pass"} — ${rocq.summary ?? ""}`.trim()];
-			for (const e of rocq.verdict.errors) lines.push(`- ${e.line > 0 ? `proof line ${e.line}` : "statement"}: ${e.message}`);
-			parts.push(lines.join("\n"));
-		} else parts.push("Rocq verdict: not checked (no Rocq verdict for this submission).");
-	}
+export function newThinkingMessage(problemCallId: string, text: string, images?: readonly ImageContent[]): LhMarkerMessage {
 	return {
 		id: newMessageId(),
 		role: "custom",
 		customType: "practice-thinking",
-		content: parts.join("\n\n"),
+		content: `${THINKING_LABEL}:\n${text}`,
 		display: true,
-		details: { problemCallId, text, ...(images?.length ? { images: images.map(image => ({ ...image })) } : {}), ...(lean ? { lean } : {}), ...(tla ? { tla } : {}), ...(cpp ? { cpp } : {}), ...(rocq ? { rocq } : {}) },
+		details: { problemCallId, text, ...(images?.length ? { images: images.map(image => ({ ...image })) } : {}) },
 		timestamp: Date.now(),
 	};
-}
-
-/** A practice submission's Lean half: the proof and the server's verdict. */
-export interface PracticeLeanSubmission {
-	proof: string;
-	verdict?: import("./lean-cell.ts").LeanVerdict;
-	summary?: string;
-}
-
-function leanVerdictLines(lean: PracticeLeanSubmission): string {
-	const v = lean.verdict!;
-	const lines = [`Lean verdict: ${v.passed ? "passes" : "does not pass"} — ${lean.summary ?? ""}`.trim()];
-	for (const e of v.errors) lines.push(`- ${e.line > 0 ? `proof line ${e.line}` : "statement"}: ${e.message}`);
-	return lines.join("\n");
-}
-
-/** A practice submission's TLA+ half: the solution and the server's verdict. */
-export interface PracticeTlaSubmission {
-	solution: string;
-	verdict?: import("./tla-cell.ts").TlaVerdict;
-	summary?: string;
-}
-
-function tlaVerdictLines(tla: PracticeTlaSubmission): string {
-	const view = tlaAnswerForModel({ solution: tla.solution, verdict: tla.verdict!, summary: tla.summary ?? "" }, "practice");
-	const lines = [`TLC verdict: ${tla.verdict!.passed ? "passes" : "does not pass"} — ${tla.summary ?? ""}`.trim()];
-	for (const e of (view.errors as { line?: number; message: string }[] | undefined) ?? []) lines.push(`- ${e.line !== undefined ? `line ${e.line}` : "error"}: ${e.message}`);
-	if (view.counterexample) lines.push("Counterexample:", ...(view.counterexample as string[]).map((l) => `  ${l}`));
-	if (view.unreachable) lines.push(`Not reachable: ${(view.unreachable as string[]).join("; ")}`);
-	if (view.review) lines.push(String(view.review));
-	return lines.join("\n");
-}
-
-/** A practice submission's Rocq half: the proof and the server's verdict. */
-export interface PracticeRocqSubmission {
-	proof: string;
-	verdict?: import("./rocq-cell.ts").RocqVerdict;
-	summary?: string;
-}
-
-/** A practice submission's C++ half: the solution and the server's verdict. */
-export interface PracticeCppSubmission {
-	solution: string;
-	verdict?: import("./cpp-cell.ts").CppVerdict;
-	summary?: string;
-}
-
-function cppVerdictLines(cpp: PracticeCppSubmission): string {
-	const view = cppAnswerForModel(cpp.solution, cpp.verdict!, cpp.summary ?? "", "practice");
-	const lines = [`Test verdict: ${cpp.verdict!.passed ? "passes" : "does not pass"} — ${cpp.summary ?? ""}`.trim()];
-	for (const e of (view.errors as { line?: number; message: string }[] | undefined) ?? []) lines.push(`- ${e.line !== undefined ? `line ${e.line}` : "error"}: ${e.message}`);
-	for (const t of (view.failedTests as { name: string; hidden?: boolean; message?: string; output?: string }[] | undefined) ?? []) {
-		lines.push(`- test "${t.name}"${t.hidden ? " (hidden)" : ""} fails: ${t.message ?? ""}`.trim());
-	}
-	if (view.review) lines.push(String(view.review));
-	return lines.join("\n");
 }
 
 /** The learner's explicit move-on signal (owner round 16): appended by
@@ -951,15 +859,6 @@ export interface QuestionCall extends Omit<PendingQuestion, "key"> {
 /** Newest native assistant only; siblings remain in call order. No result
  * alone is NOT proof of a posed question: failed generations never execute
  * their calls, and older records can contain truncated/unvalidated inputs. */
-/** Code-cell exercises (lean/tla/cpp/rocq) have no display parser: their
- *  own execute validated the arguments (and checked the reference) before
- *  acknowledging, so any object-shaped call is displayable. */
-const CODE_CELL_EXERCISE_TOOLS: readonly string[] = ["lean_exercise", "tla_exercise", "cpp_exercise", "rocq_exercise"];
-function questionInputDisplayable(tool: string, input: unknown): boolean {
-	if (CODE_CELL_EXERCISE_TOOLS.includes(tool)) return input !== null && typeof input === "object";
-	return parseQuestionInput(tool, input) !== undefined;
-}
-
 export function questionCallsOf(messages: readonly LhMessage[]): QuestionCall[] {
 	for (let mi = messages.length - 1; mi >= 0; mi--) {
 		const assistant = messages[mi]!;
@@ -971,7 +870,7 @@ export function questionCallsOf(messages: readonly LhMessage[]): QuestionCall[] 
 			if (readPluginQuestionMessageAnnotation(assistant, contentIndex).status !== "absent") continue;
 			const status = assistant.stopReason === "error" || assistant.stopReason === "aborted" ? "failed"
 				: assistant.stopReason === "pending" ? "streaming"
-				: assistant.stopReason === "length" || block.argumentsError || !questionInputDisplayable(block.name, block.arguments) ? "malformed"
+				: assistant.stopReason === "length" || block.argumentsError || !parseQuestionInput(block.name, block.arguments) ? "malformed"
 				: "answerable";
 			calls.push({ toolCallId: block.id, tool: block.name, input: block.arguments,
 				messageId: assistant.id, contentIndex, status });
@@ -1102,7 +1001,7 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 		}
 		if (!(QUESTION_TOOLS as readonly string[]).includes(message.toolName) || message.isError || message.details == null || (message.details as { dismissed?: boolean }).dismissed) return "neutral";
 		const details = message.details as Partial<QuestionAnswerData>;
-		if (!["quiz", "ask", "explain", "lean", "tla", "cpp", "rocq"].includes(details.kind ?? "") || typeof details.questionText !== "string" || typeof details.dontKnow !== "boolean" || !Array.isArray(details.answers) || typeof details.answeredAt !== "string") return "unrecognizable";
+		if (!["quiz", "ask", "explain"].includes(details.kind ?? "") || typeof details.questionText !== "string" || typeof details.dontKnow !== "boolean" || !Array.isArray(details.answers) || typeof details.answeredAt !== "string") return "unrecognizable";
 		const calls = history.flatMap((m) => m.role === "assistant" ? m.content.filter((b) => b.type === "toolCall" && b.id === message.toolCallId) : []);
 		return calls.length === 1 && calls[0]?.type === "toolCall" && calls[0].name === message.toolName ? "learner" : "unrecognizable";
 	}

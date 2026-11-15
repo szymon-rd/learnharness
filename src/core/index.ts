@@ -98,19 +98,6 @@ export * from "./coverage.ts";
 // ONE session→markdown formatter — the extractor's view and the user-facing
 // export share it. Pure, browser-safe.
 export * from "./session-markdown.ts";
-// Lean code cells (owner, 2026-10-30): the cell layout + verdict, and the
-// editor's input abbreviations. Pure, browser-safe.
-export * from "./lean-cell.ts";
-export * from "./lean-abbreviations.ts";
-// TLA+ code cells (owner, 2026-11-05): the cell layout, the TLC model and
-// the verdict. Pure, browser-safe.
-export * from "./tla-cell.ts";
-// C++ code cells (owner, 2026-11-09): the cell layout, the test program and
-// the verdict. Pure, browser-safe.
-export * from "./cpp-cell.ts";
-// Rocq code cells (owner, 2026-11-12): the cell layout and verdict, like Lean's.
-export * from "./rocq-cell.ts";
-export * from "./rocq-abbreviations.ts";
 // side-chat.ts (shared side conversations): ask-input validation,
 // thread lookup and the side model's lesson document. Pure, browser-safe.
 export * from "./side-chat.ts";

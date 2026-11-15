@@ -46,10 +46,6 @@ import {
 } from "@/src/core";
 import type { PrepareBuiltinSubmission } from "./plugin-submission-adapters";
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
-import { LeanDockForm, parseLeanExerciseInput } from "@/components/lean/lean-dock";
-import { parseTlaExerciseInput, TlaDockForm } from "@/components/tla/tla-dock";
-import { CppDockForm, parseCppExerciseInput } from "@/components/cpp/cpp-dock";
-import { parseRocqExerciseInput, RocqDockForm } from "@/components/rocq/rocq-dock";
 
 /**
  * The question dock — a pending quiz/ask REPLACES the chat composer: the
@@ -74,10 +70,8 @@ import { parseRocqExerciseInput, RocqDockForm } from "@/components/rocq/rocq-doc
 export interface QuestionDockProps {
 	/** Private click-time view read: no draft save or dictation flush. */
 	viewReader?: ViewReaderRef<NativeQuestionViewState>;
-	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise" | "rocq_exercise";
+	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall";
 	toolCallId: string;
-	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
-	chatId?: string;
 	input: QuizToolInput | AskToolInput | ExplainToolInput;
 	/** Collapse state, owned by the DockOverlay (it drives the shell's height morph). */
 	expanded: boolean;
@@ -124,7 +118,6 @@ export function QuestionDock({
 	viewReader,
 	toolName,
 	toolCallId,
-	chatId = "",
 	input,
 	expanded,
 	reveal = false,
@@ -151,121 +144,6 @@ export function QuestionDock({
 	// 2026-10-09): probe-phase questions label Probe/Recall in the
 	// composer; teach tools keep the standing labels.
 	const toolLabel = toolName === "probe" ? "Probe" : toolName === "recall" ? "Recall" : undefined;
-	// Lean code cells (owner, 2026-10-30): their own form — the cell, live
-	// Lean, thinking, Submit. Same bar and collapse behavior as the rest.
-	if (toolName === "lean_exercise") {
-		const lean = parseLeanExerciseInput(input);
-		if (!lean) {
-			return (
-				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-					This exercise arrived malformed — the transcript keeps the retry.
-				</div>
-			);
-		}
-		return (
-			<>
-				{!expanded && <QuestionDockBar toolName="lean_exercise" question={lean.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="Lean" />}
-				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
-					<LeanDockForm
-						toolCallId={toolCallId}
-						input={lean}
-						onSubmit={onSubmit}
-						initialDraft={initialDraft}
-						onSaveDraft={onSaveDraft}
-						onEscape={onEscape}
-						dictationClaim={dictationClaim}
-						compactionRunning={compactionRunning}
-					/>
-				</div>
-			</>
-		);
-	}
-	// TLA+ code cells (owner, 2026-11-05): the same shape with the TLA+ cell.
-	if (toolName === "tla_exercise") {
-		const tla = parseTlaExerciseInput(input);
-		if (!tla) {
-			return (
-				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-					This exercise arrived malformed — the transcript keeps the retry.
-				</div>
-			);
-		}
-		return (
-			<>
-				{!expanded && <QuestionDockBar toolName="tla_exercise" question={tla.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="TLA+" />}
-				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
-					<TlaDockForm
-						chatId={chatId}
-						toolCallId={toolCallId}
-						exercise={tla}
-						onSubmit={onSubmit}
-						initialDraft={initialDraft}
-						onSaveDraft={onSaveDraft}
-						onEscape={onEscape}
-						dictationClaim={dictationClaim}
-						compactionRunning={compactionRunning}
-					/>
-				</div>
-			</>
-		);
-	}
-	// Rocq code cells (owner, 2026-11-12): like Lean's.
-	if (toolName === "rocq_exercise") {
-		const rocq = parseRocqExerciseInput(input);
-		if (!rocq) {
-			return (
-				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-					This exercise arrived malformed — the transcript keeps the retry.
-				</div>
-			);
-		}
-		return (
-			<>
-				{!expanded && <QuestionDockBar toolName="rocq_exercise" question={rocq.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="Rocq" />}
-				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
-					<RocqDockForm
-						toolCallId={toolCallId}
-						input={rocq}
-						onSubmit={onSubmit}
-						initialDraft={initialDraft}
-						onSaveDraft={onSaveDraft}
-						onEscape={onEscape}
-						dictationClaim={dictationClaim}
-						compactionRunning={compactionRunning}
-					/>
-				</div>
-			</>
-		);
-	}
-	// C++ code cells (owner, 2026-11-09): the same shape with the C++ cell.
-	if (toolName === "cpp_exercise") {
-		const cpp = parseCppExerciseInput(input);
-		if (!cpp) {
-			return (
-				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-					This exercise arrived malformed — the transcript keeps the retry.
-				</div>
-			);
-		}
-		return (
-			<>
-				{!expanded && <QuestionDockBar toolName="cpp_exercise" question={cpp.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="C++" />}
-				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
-					<CppDockForm
-						chatId={chatId}
-						toolCallId={toolCallId}
-						exercise={cpp}
-						onSubmit={onSubmit}
-						initialDraft={initialDraft}
-						onSaveDraft={onSaveDraft}
-						onEscape={onEscape}
-						dictationClaim={dictationClaim}
-						compactionRunning={compactionRunning}
-					/>
-				</div>
-			</>
-		);
-	}
 	// Parse, don't cast (src/core/tool-parts.ts): the model authored this
 	// input, and only the schema the tool declared vouches for its shape.
 	// The dock mounts on input-available parts (already validated at the
@@ -330,7 +208,7 @@ export function QuestionDockBar({
 	label,
 	toolLabel,
 }: {
-	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise" | "tla_exercise" | "cpp_exercise" | "rocq_exercise";
+	toolName: "quiz" | "ask_user_question" | "explain";
 	question: string;
 	onExpand: () => void;
 	variant?: "collapsed" | "reveal";

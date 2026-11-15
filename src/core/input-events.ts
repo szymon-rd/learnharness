@@ -71,25 +71,7 @@ export type ChatInput =
 	 *  thinking on the ACTIVE problem — one lane (owner 2026-10-05):
 	 *  whether it claims an answer is read from the text. One
 	 *  problem may carry many submissions; each is its own turn. */
-	| {
-			type: "thinking";
-			problemCallId: string;
-			text: string;
-			images?: ImageContent[];
-			occurrence?: PluginSubmissionOccurrence;
-			proof?: string;
-			lean?: import("./native-messages.ts").PracticeLeanSubmission;
-			/** A TLA+ problem's submission (owner, 2026-11-05): the solution;
-			 *  `tla` (with the verdict) is set by the server, never the client. */
-			solution?: string;
-			tla?: import("./native-messages.ts").PracticeTlaSubmission;
-			/** A C++ problem's submission (owner, 2026-11-09); `cpp` is the server's. */
-			cppSolution?: string;
-			cpp?: import("./native-messages.ts").PracticeCppSubmission;
-			/** A Rocq problem's submission (owner, 2026-11-12); `rocq` is the server's. */
-			rocqProof?: string;
-			rocq?: import("./native-messages.ts").PracticeRocqSubmission;
-	  }
+	| { type: "thinking"; problemCallId: string; text: string; images?: ImageContent[]; occurrence?: PluginSubmissionOccurrence }
 	/** The practice move-on signal (owner round 16): the learner's
 	 *  explicit go-ahead during the between-problems pause — the Next
 	 *  chip or Enter on an empty composer. Practice sessions only, and
@@ -291,36 +273,12 @@ export function parseChatInput(input: unknown): ChatInput {
 			if (typeof i.problemCallId !== "string" || i.problemCallId.length === 0) {
 				throw new ChatInputError("thinking input requires problemCallId");
 			}
-			if (i.proof !== undefined && typeof i.proof !== "string") {
-				throw new ChatInputError("thinking input's proof must be a string");
-			}
-			if (i.solution !== undefined && typeof i.solution !== "string") {
-				throw new ChatInputError("thinking input's solution must be a string");
-			}
-			if (i.cppSolution !== undefined && typeof i.cppSolution !== "string") {
-				throw new ChatInputError("thinking input's cppSolution must be a string");
-			}
-			if (i.rocqProof !== undefined && typeof i.rocqProof !== "string") {
-				throw new ChatInputError("thinking input's rocqProof must be a string");
-			}
 			const images = parseImages(i.images);
 			const occurrence = parseOptionalOccurrence(i.occurrence, images);
-			// A code-cell problem's submission may carry only the proof
-			// (solution) (owner, 2026-10-30); otherwise text or images are required.
-			if (typeof i.text !== "string" || (!i.text.trim() && !images && typeof i.proof !== "string" && typeof i.solution !== "string" && typeof i.cppSolution !== "string" && typeof i.rocqProof !== "string")) {
+			if (typeof i.text !== "string" || (!i.text.trim() && !images)) {
 				throw new ChatInputError("thinking input requires non-empty text or images");
 			}
-			return {
-				type: "thinking",
-				problemCallId: i.problemCallId,
-				text: i.text,
-				...(images ? { images } : {}),
-				...(occurrence ? { occurrence } : {}),
-				...(typeof i.proof === "string" ? { proof: i.proof } : {}),
-				...(typeof i.solution === "string" ? { solution: i.solution } : {}),
-				...(typeof i.cppSolution === "string" ? { cppSolution: i.cppSolution } : {}),
-				...(typeof i.rocqProof === "string" ? { rocqProof: i.rocqProof } : {}),
-			};
+			return { type: "thinking", problemCallId: i.problemCallId, text: i.text, ...(images ? { images } : {}), ...(occurrence ? { occurrence } : {}) };
 		}
 		case "next":
 			return { type: "next" };
@@ -372,13 +330,7 @@ export function inputAppends(
 				throw new ChatInputError("thinking input targets no active problem");
 			}
 			if (active.pluginProblem) throw new ChatInputError("This problem requires its registered submission editor");
-			// The proof's verdict (input.lean) is set by the server (chat-handler)
-			// before this runs; a client-sent `lean` never reaches here.
-			const lean = input.proof !== undefined ? (input.lean ?? { proof: input.proof }) : undefined;
-			const tla = input.solution !== undefined ? (input.tla ?? { solution: input.solution }) : undefined;
-			const cpp = input.cppSolution !== undefined ? (input.cpp ?? { solution: input.cppSolution }) : undefined;
-			const rocq = input.rocqProof !== undefined ? (input.rocq ?? { proof: input.rocqProof }) : undefined;
-			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, input.images, lean, tla, cpp, rocq)];
+			return [...dismissalConclusion(record), newThinkingMessage(input.problemCallId, input.text, input.images)];
 		}
 		case "next": {
 			// Honest 400s, the thinking gate's discipline: the signal is a

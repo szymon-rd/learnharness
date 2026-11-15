@@ -38,7 +38,7 @@ function isTypingSurface(el: Element | null): boolean {
 /**
  * Whether the on-screen keyboard is (very likely) open: a phone with a
  * touch screen and a focused typing surface — the composer, a thinking
- * field, or the Lean editor (CodeMirror is contenteditable). Focus is the
+ * field, or a contenteditable editor (e.g. CodeMirror). Focus is the
  * reliable signal in both the Android WebView and phone browsers, where
  * viewport-resize heuristics differ.
  */

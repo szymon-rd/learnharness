@@ -4,18 +4,9 @@
 
 [API index](README.md) · [Data access and host boundaries](../plugin-authoring.md#backend-and-data)
 
-- [CodeCellLanguage](#codecelllanguage) — supporting declaration
 - [PlanEdge](#planedge) — supporting declaration
 - [PlanNode](#plannode) — supporting declaration
 - [PlanTree](#plantree) — supporting declaration
-
-## CodeCellLanguage
-
-Supporting declaration used by a public type. This is not an additional runtime API or SDK helper.
-
-```ts
-export type CodeCellLanguage = "lean" | "tla" | "cpp" | "rocq";
-```
 
 ## PlanEdge
 
@@ -107,18 +98,16 @@ export interface PlanTree {
     nodes: PlanNode[];
     edges: PlanEdge[];
     version: number;
-    codeCells?: CodeCellLanguage | true;
 }
 ```
 
-**Related types:** [CodeCellLanguage](contracts-plan.md#codecelllanguage), [PlanEdge](contracts-plan.md#planedge), [PlanNode](contracts-plan.md#plannode).
+**Related types:** [PlanEdge](contracts-plan.md#planedge), [PlanNode](contracts-plan.md#plannode).
 
 **Member index** (including nested object members; inherited members are defined in the linked base types):
 
 - [nodes](#plantree-nodes)
 - [edges](#plantree-edges)
 - [version](#plantree-version)
-- [codeCells](#plantree-codecells)
 
 ### PlanTree nodes
 
@@ -138,15 +127,4 @@ Increments on every mutation — lets the UI animate/react to changes.
 
 ```ts
 version: number;
-```
-
-### PlanTree codeCells
-
-The code-cell language of the session: plan_init's codeCells
-mark. Only then may the teacher pose
-code cells, and only in that language. `true` is the pre-TLA+ form of
-"lean" (read it through planCodeCells). Absent = no code cells.
-
-```ts
-codeCells?: CodeCellLanguage | true;
 ```

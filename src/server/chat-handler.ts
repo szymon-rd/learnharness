@@ -55,22 +55,8 @@ import { sideChats, type SideChatService } from "./side-chat.ts";
 import { SIDE_CONTEXT_BUDGET_ERROR, sideBudgetRetryDrops, sideContextWindow } from "./side-context-budget.ts";
 import { registerTurn, rememberTurnFailure, unregisterTurn } from "./turn-runs.ts";
 import { persistTurn, triggerExtraction, TurnPersistenceError } from "./turn-service.ts";
-import { hasProbeDone, hasUnresolvedQuestion, pendingPluginQuestionOf, pluginQuestionCallsOf, questionCallsOf, danglingQuestionOf, activeProblemOf } from "../core/native-messages.ts";
+import { hasProbeDone, hasUnresolvedQuestion, pendingPluginQuestionOf, pluginQuestionCallsOf, questionCallsOf } from "../core/native-messages.ts";
 import { samePluginQuestionOccurrence } from "../core/plugin-questions.ts";
-import { LEAN_EXERCISE_TOOL } from "../core/lean-cell.ts";
-import { TLA_EXERCISE_TOOL } from "../core/tla-cell.ts";
-import { planCodeCells, type CodeCellLanguage } from "../core/contracts.ts";
-import { gradeTlaAnswer, gradeTlaSolution, TlaAnswerError } from "./tla-answer.ts";
-import { tlaChecker } from "./tla-service.ts";
-import { CPP_EXERCISE_TOOL } from "../core/cpp-cell.ts";
-import { CppAnswerError, gradeCppAnswer, gradeCppSolution } from "./cpp-answer.ts";
-import { cppChecker } from "./cpp-service.ts";
-import { ROCQ_EXERCISE_TOOL } from "../core/rocq-cell.ts";
-import { gradeRocqAnswer, gradeRocqProof, RocqAnswerError } from "./rocq-answer.ts";
-import { rocqChecker } from "./rocq-service.ts";
-import { codeCellsEnabled } from "../core/settings-resolution.ts";
-import { gradeLeanAnswer, gradeLeanProof, LeanAnswerError } from "./lean-answer.ts";
-import { leanChecker } from "./lean-service.ts";
 import { composeInstructions } from "../agent/teacher-agent.ts";
 import { ensureCompacted, kickCompaction, effectiveThresholdTokens, projectedContextTokens, compactionInFlight } from "./compaction.ts";
 import { COMPACTION_RESERVE_TOKENS } from "../core/compaction.ts";
@@ -110,29 +96,6 @@ import type {CallUsage} from "../core/contracts.ts";
  * wake pipeline's server-side steers (src/server/jobs.ts) — one code path
  * for write-ahead persistence, turn liveness, and the turn services.
  */
-
-/** Did any of these propositions come up in a teaching session whose plan
- *  was marked with this code-cell language? (Practice sessions have no plan;
- *  their material decides whether Lean or TLA+ problems belong — owner,
- *  2026-10-30 / 2026-11-05.) */
-function codeSourcedPropositions(language: CodeCellLanguage, ids: string[]): boolean {
-	if (ids.length === 0) return false;
-	const wanted = new Set(ids);
-	const checked = new Map<string, boolean>();
-	for (const node of stores.graphStore.readNodes()) {
-		if (!wanted.has(node.id)) continue;
-		for (const point of node.provenance) {
-			if (!checked.has(point.chatId)) checked.set(point.chatId, planCodeCells(stores.chatStore.getChat(point.chatId)?.tree) === language);
-			if (checked.get(point.chatId)) return true;
-		}
-	}
-	return false;
-}
-
-const leanSourcedPropositions = (ids: string[]) => codeSourcedPropositions("lean", ids);
-const tlaSourcedPropositions = (ids: string[]) => codeSourcedPropositions("tla", ids);
-const cppSourcedPropositions = (ids: string[]) => codeSourcedPropositions("cpp", ids);
-const rocqSourcedPropositions = (ids: string[]) => codeSourcedPropositions("rocq", ids);
 
 /** Fresh check only at new background-run admission; never cancel a run
  * already in progress when the opt-in is switched off. */
@@ -348,135 +311,6 @@ export async function handleChatInput(
 		const envelope = providerKeyMissingEnvelope(conversation.provider, ["strong"]);
 		console.info(`[chat ${chatId}] turn refused — ${JSON.stringify(envelope)}`);
 		return Response.json(envelope, { status: 503 });
-	}
-
-	// LEAN CODE CELLS (owner, 2026-10-30 — "Locked + checked"): an answer
-	// to a lean_exercise carries only the learner's proof; the verdict is
-	// computed HERE from the persisted call (the exact locked statement),
-	// never taken from the client. Placement: after the model/key gates (a
-	// refused turn wastes no Lean run), before every write — a Lean failure
-	// refuses the answer with nothing appended, so the learner can resubmit.
-	if (input.type === "answer") {
-		const pending = danglingQuestionOf(record.messages);
-		if (pending?.toolCallId === input.toolCallId && pending.tool === LEAN_EXERCISE_TOOL) {
-			try {
-				input = { ...input, answer: await gradeLeanAnswer(pending.input, input.answer, leanChecker()) };
-			} catch (err) {
-				if (err instanceof LeanAnswerError) return Response.json({ error: err.message }, { status: err.status });
-				throw err;
-			}
-			record = stores.chatStore.getChat(chatId) ?? record;
-		}
-		// TLA+ code cells (owner, 2026-11-05): the same — only the solution
-		// comes from the client; TLC's verdict is computed from the persisted call.
-		// C++ code cells (owner, 2026-11-09): the same, every test run on the server.
-		// Rocq code cells (owner, 2026-11-12): the same as Lean.
-		if (pending?.toolCallId === input.toolCallId && pending.tool === ROCQ_EXERCISE_TOOL) {
-			try {
-				input = { ...input, answer: await gradeRocqAnswer(pending.input, input.answer, rocqChecker()) };
-			} catch (err) {
-				if (err instanceof RocqAnswerError) return Response.json({ error: err.message }, { status: err.status });
-				throw err;
-			}
-			record = stores.chatStore.getChat(chatId) ?? record;
-		}
-		if (pending?.toolCallId === input.toolCallId && pending.tool === CPP_EXERCISE_TOOL) {
-			try {
-				input = { ...input, answer: await gradeCppAnswer(pending.input, input.answer, cppChecker()) };
-			} catch (err) {
-				if (err instanceof CppAnswerError) return Response.json({ error: err.message }, { status: err.status });
-				throw err;
-			}
-			record = stores.chatStore.getChat(chatId) ?? record;
-		}
-		if (pending?.toolCallId === input.toolCallId && pending.tool === TLA_EXERCISE_TOOL) {
-			try {
-				input = { ...input, answer: await gradeTlaAnswer(pending.input, input.answer, tlaChecker()) };
-			} catch (err) {
-				if (err instanceof TlaAnswerError) return Response.json({ error: err.message }, { status: err.status });
-				throw err;
-			}
-			record = stores.chatStore.getChat(chatId) ?? record;
-		}
-	}
-	// The practice twin: a submission on a Lean problem carries the proof;
-	// the verdict comes from the persisted problem call's exercise.
-	if (input.type === "thinking" && input.proof !== undefined) {
-		const active = activeProblemOf(record.messages);
-		const exercise = active?.toolCallId === input.problemCallId ? (active.input as { lean?: unknown }).lean : undefined;
-		if (exercise) {
-			try {
-				const graded = await gradeLeanProof(exercise, input.proof, leanChecker());
-				input = { ...input, lean: { proof: input.proof, verdict: graded.verdict, summary: graded.summary } };
-			} catch (err) {
-				if (err instanceof LeanAnswerError) return Response.json({ error: err.message }, { status: err.status });
-				throw err;
-			}
-			record = stores.chatStore.getChat(chatId) ?? record;
-		} else {
-			// Not a Lean problem: the proof field means nothing here.
-			const { proof: _proof, ...rest } = input;
-			input = rest;
-		}
-	}
-	// TLA+ problems: the submission carries the solution; TLC's verdict comes
-	// from the persisted problem call's `tla` block.
-	if (input.type === "thinking" && input.solution !== undefined) {
-		const active = activeProblemOf(record.messages);
-		const exercise = active?.toolCallId === input.problemCallId ? (active.input as { tla?: unknown }).tla : undefined;
-		if (exercise) {
-			try {
-				const graded = await gradeTlaSolution(exercise, input.solution, tlaChecker());
-				input = { ...input, tla: { solution: input.solution, verdict: graded.verdict, summary: graded.summary } };
-			} catch (err) {
-				if (err instanceof TlaAnswerError) return Response.json({ error: err.message }, { status: err.status });
-				throw err;
-			}
-			record = stores.chatStore.getChat(chatId) ?? record;
-		} else {
-			const { solution: _solution, ...rest } = input;
-			input = rest;
-		}
-	}
-
-	// C++ problems: the submission carries the solution; every test runs
-	// against the persisted problem call's `cpp` block.
-	if (input.type === "thinking" && input.cppSolution !== undefined) {
-		const active = activeProblemOf(record.messages);
-		const exercise = active?.toolCallId === input.problemCallId ? (active.input as { cpp?: unknown }).cpp : undefined;
-		if (exercise) {
-			try {
-				const graded = await gradeCppSolution(exercise, input.cppSolution, cppChecker());
-				input = { ...input, cpp: { solution: input.cppSolution, verdict: graded.verdict, summary: graded.summary } };
-			} catch (err) {
-				if (err instanceof CppAnswerError) return Response.json({ error: err.message }, { status: err.status });
-				throw err;
-			}
-			record = stores.chatStore.getChat(chatId) ?? record;
-		} else {
-			const { cppSolution: _drop, ...rest } = input;
-			input = rest;
-		}
-	}
-
-	// Rocq problems: the submission carries the proof; the verdict comes from
-	// the persisted problem call's `rocq` block.
-	if (input.type === "thinking" && input.rocqProof !== undefined) {
-		const active = activeProblemOf(record.messages);
-		const exercise = active?.toolCallId === input.problemCallId ? (active.input as { rocq?: unknown }).rocq : undefined;
-		if (exercise) {
-			try {
-				const graded = await gradeRocqProof(exercise, input.rocqProof, rocqChecker());
-				input = { ...input, rocq: { proof: input.rocqProof, verdict: graded.verdict, summary: graded.summary } };
-			} catch (err) {
-				if (err instanceof RocqAnswerError) return Response.json({ error: err.message }, { status: err.status });
-				throw err;
-			}
-			record = stores.chatStore.getChat(chatId) ?? record;
-		} else {
-			const { rocqProof: _drop, ...rest } = input;
-			input = rest;
-		}
 	}
 
 	// THE COMPACTION GATE (owner round 14, 2026-10-05 — the structural
@@ -920,27 +754,6 @@ export async function handleChatInput(
 							searchAvailable,
 						},
 						...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
-						// Lean problems (owner, 2026-10-30): the code-cells gate, and
-						// material from a teaching session marked as a Lean topic.
-						...(() => {
-							const check = leanChecker();
-							return check && codeCellsEnabled(effective, true) ? { lean: { check, leanSourced: leanSourcedPropositions } } : {};
-						})(),
-						// TLA+ problems (owner, 2026-11-05): the same rule with the TLA+ service.
-						...(() => {
-							const check = tlaChecker();
-							return check && codeCellsEnabled(effective, true) ? { tla: { check, tlaSourced: tlaSourcedPropositions } } : {};
-						})(),
-						// C++ problems (owner, 2026-11-09): the same rule with the C++ service.
-						...(() => {
-							const check = cppChecker();
-							return check && codeCellsEnabled(effective, true) ? { cpp: { check, cppSourced: cppSourcedPropositions } } : {};
-						})(),
-						// Rocq problems (owner, 2026-11-12): the same rule with the Rocq service.
-						...(() => {
-							const check = rocqChecker();
-							return check && codeCellsEnabled(effective, true) ? { rocq: { check, rocqSourced: rocqSourcedPropositions } } : {};
-						})(),
 					},
 					agentOpts,
 				)
@@ -954,26 +767,6 @@ export async function handleChatInput(
 						// The registry drop's signal (2026-09-20): no live engine
 						// = no research tool in the teacher's registry.
 						searchAvailable,
-						// Lean code cells: the "Code cells" setting AND a Lean service.
-						...(() => {
-							const lean = leanChecker();
-							return lean && codeCellsEnabled(effective, true) ? { lean } : {};
-						})(),
-						// TLA+ code cells: the same setting AND the TLA+ service.
-						...(() => {
-							const tla = tlaChecker();
-							return tla && codeCellsEnabled(effective, true) ? { tla } : {};
-						})(),
-						// C++ code cells: the same setting AND the C++ service.
-						...(() => {
-							const cpp = cppChecker();
-							return cpp && codeCellsEnabled(effective, true) ? { cpp } : {};
-						})(),
-						// Rocq code cells: the same setting AND the Rocq service.
-						...(() => {
-							const rocq = rocqChecker();
-							return rocq && codeCellsEnabled(effective, true) ? { rocq } : {};
-						})(),
 					},
 					agentOpts,
 				)

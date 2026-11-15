@@ -56,24 +56,12 @@ export const QUESTION_TOOLS = [
 	"ask_user_question",
 	"explain",
 	"recall",
-	// Lean code cells (owner, 2026-10-30): the teacher's lean_exercise.
-	"lean_exercise",
-	// TLA+ code cells (owner, 2026-11-05): the teacher's tla_exercise.
-	"tla_exercise",
-	// C++ code cells (owner, 2026-11-09): the teacher's cpp_exercise.
-	"cpp_exercise",
-	// Rocq code cells (owner, 2026-11-12): the teacher's rocq_exercise.
-	"rocq_exercise",
 ] as const;
 
 /** The tool→kind map (the dock's own fold, named once — the dismissal
  *  path and the dock must never disagree on what a tool is). The probe
  *  names fold onto their teach kinds — the dock is kind-driven. */
-export function toolQuestionKind(tool: string): "quiz" | "ask" | "explain" | "lean" | "tla" | "cpp" | "rocq" {
-	if (tool === "rocq_exercise") return "rocq";
-	if (tool === "cpp_exercise") return "cpp";
-	if (tool === "lean_exercise") return "lean";
-	if (tool === "tla_exercise") return "tla";
+export function toolQuestionKind(tool: string): "quiz" | "ask" | "explain" {
 	return tool === "quiz" || tool === "probe" ? "quiz" : tool === "explain" || tool === "recall" ? "explain" : "ask";
 }
 

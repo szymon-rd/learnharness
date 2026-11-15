@@ -30,12 +30,6 @@ import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ai-e
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { BrailleSpinner } from "@/components/braille-spinner";
 import { ToolPartRenderer } from "@/components/plugin-renderers";
-import { LeanPreparingLine } from "@/components/lean/lean-preparing-line";
-import { TlaPreparingLine } from "@/components/tla/tla-preparing-line";
-import { CppPreparingLine } from "@/components/cpp/cpp-preparing-line";
-import { RocqPreparingLine } from "@/components/rocq/rocq-preparing-line";
-import { collectCodeReviews, sameCodeReviews, CodeReviewsContext, type CodeReviewView } from "@/components/code-reviews";
-import type { PracticeCodeSubmission } from "@/components/practice-dock";
 import { useIsPhone, useSoftKeyboardOpen } from "@/components/phone-layout";
 import { ThinkingChip } from "@/components/thinking-chip";
 import { Separator } from "@/components/ui/separator";
@@ -658,18 +652,10 @@ export function Chat({
 	// the dock stays mounted (the problem is still active until the agent
 	// concludes).
 	const submitThinking = useCallback(
-		(text: string, code?: PracticeCodeSubmission) => {
+		(text: string) => {
 			const problem = activeProblemRef.current;
 			if (!problem) return;
-			void send({
-				type: "thinking",
-				problemCallId: problem.toolCallId,
-				text,
-				...(code?.proof !== undefined ? { proof: code.proof } : {}),
-				...(code?.solution !== undefined ? { solution: code.solution } : {}),
-				...(code?.cppSolution !== undefined ? { cppSolution: code.cppSolution } : {}),
-				...(code?.rocqProof !== undefined ? { rocqProof: code.rocqProof } : {}),
-			});
+			void send({ type: "thinking", problemCallId: problem.toolCallId, text });
 		},
 		[send],
 	);
@@ -1729,15 +1715,6 @@ export function Chat({
 		}),
 		[chatId, syncFromServer],
 	);
-	// The tutor's reviews of code-cell answers (tla_review, cpp_review): the
-	// answered cards read theirs. Stable unless a review changes, so
-	// streaming does not re-render the cards.
-	const codeReviewsRef = useRef<ReadonlyMap<string, CodeReviewView>>(new Map());
-	const codeReviews = useMemo(() => {
-		const next = collectCodeReviews(messages as readonly { parts?: readonly unknown[] }[]);
-		if (!sameCodeReviews(next, codeReviewsRef.current)) codeReviewsRef.current = next;
-		return codeReviewsRef.current;
-	}, [messages]);
 	const sessionMermaid = useMemo(
 		() => ({
 			openMermaid: setMermaidFocus,
@@ -1751,7 +1728,6 @@ export function Chat({
 
 	return (
 		<ChatActionsContext.Provider value={chatActions}>
-		<CodeReviewsContext.Provider value={codeReviews}>
 		<SessionMermaidContext.Provider value={sessionMermaid}>
 		<JobsContext.Provider value={jobs}>
 		<CitationActionsContext.Provider value={citationActions}>
@@ -2206,7 +2182,6 @@ export function Chat({
 				// the learner sends it themselves.
 			}}
 		/>
-		</CodeReviewsContext.Provider>
 		</ChatActionsContext.Provider>
 	);
 }
@@ -2564,11 +2539,7 @@ const TranscriptRow = memo(function TranscriptRow({
 									case "tool-probe":
 									case "tool-ask_user_question":
 									case "tool-explain":
-									case "tool-recall":
-									case "tool-lean_exercise":
-									case "tool-tla_exercise":
-									case "tool-cpp_exercise":
-									case "tool-rocq_exercise": {
+									case "tool-recall": {
 										const bad = malformed.find(call => call.messageId === part.sourceMessageId && call.contentIndex === part.sourceContentIndex && call.toolCallId === part.toolCallId);
 										if (bad) return <MalformedQuestion key={pi} disabled={questionBlocked}
 											reason={questionBlocked ? "Answer or discard the remaining question first." : undefined}
@@ -2577,27 +2548,8 @@ const TranscriptRow = memo(function TranscriptRow({
 										// transcript; answered ones render as graded records.
 										if (part.state === "output-available") {
 											return (
-												<AnsweredCard
-													key={pi}
-													answer={part.output as QuestionAnswerData}
-													input={part.input}
-													toolCallId={(part as { toolCallId?: string }).toolCallId}
-												/>
+												<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} />
 											);
-										}
-										if (part.type === "tool-tla_exercise" && part.state === "input-streaming") {
-											return <TlaPreparingLine key={pi} />;
-										}
-										if (part.type === "tool-cpp_exercise" && part.state === "input-streaming") {
-											return <CppPreparingLine key={pi} />;
-										}
-										if (part.type === "tool-rocq_exercise" && part.state === "input-streaming") {
-											return <RocqPreparingLine key={pi} />;
-										}
-										// A Lean exercise stays input-streaming while its reference
-										// proof is checked; say so (and when Lean is still starting).
-										if (part.type === "tool-lean_exercise" && part.state === "input-streaming") {
-											return <LeanPreparingLine key={pi} />;
 										}
 										return null;
 									}
@@ -2714,7 +2666,7 @@ export function DockOverlay({
 	practice: { toolCallId: string; input: unknown } | null;
 	pluginPractice?: Omit<PluginProblemDockProps, "expanded" | "onExpand">;
 	/** (commit, text) — the practice dock's two submit lanes. */
-	onSubmitThinking: (text: string, code?: PracticeCodeSubmission) => void;
+	onSubmitThinking: (text: string) => void;
 	/** Teach-phase pending question: arrives collapsed behind the reveal button (W5). */
 	requiresReveal: boolean;
 	/** The reading-thinking draft (owner 2026-10-03) — owned by ChatView so
@@ -3177,9 +3129,8 @@ export function DockOverlay({
 							) : pending ? (
 								<QuestionDock
 									viewReader={nativeViewReader}
-									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise" | "rocq_exercise"}
+									toolName={pending.tool as "quiz" | "probe" | "ask_user_question" | "explain" | "recall"}
 									toolCallId={pending.toolCallId}
-									chatId={chatId}
 									input={pending.input as never}
 									expanded={expanded}
 									reveal={revealPending}
@@ -3202,8 +3153,7 @@ export function DockOverlay({
 								<PracticeDock
 									viewReader={practiceViewReader}
 									problemCallId={practice.toolCallId}
-									chatId={chatId}
-									input={practice.input as { statement: string; lean?: unknown; tla?: unknown; cpp?: unknown; rocq?: unknown }}
+									input={practice.input as { statement: string }}
 									expanded={expanded}
 									onExpand={() => {
 										setExpanded(true);

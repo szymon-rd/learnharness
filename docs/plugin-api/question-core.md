@@ -81,7 +81,7 @@ options: QuizOption[];
 Supporting declaration used by a public type. This is not an additional runtime API or SDK helper.
 
 ```ts
-export type QuestionKind = "quiz" | "ask" | "explain" | "lean" | "tla" | "cpp" | "rocq";
+export type QuestionKind = "quiz" | "ask" | "explain";
 ```
 
 ## QuestionMode

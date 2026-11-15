@@ -31,23 +31,6 @@ export interface PlanTree {
 	edges: PlanEdge[];
 	/** Increments on every mutation — lets the UI animate/react to changes. */
 	version: number;
-	/** The code-cell language of the session: plan_init's codeCells
-	 *  mark. Only then may the teacher pose
-	 *  code cells, and only in that language. `true` is the pre-TLA+ form of
-	 *  "lean" (read it through planCodeCells). Absent = no code cells. */
-	codeCells?: CodeCellLanguage | true;
-}
-
-export type CodeCellLanguage = "lean" | "tla" | "cpp" | "rocq";
-
-/** The plan's code-cell language, reading the old boolean mark as Lean. */
-export function planCodeCells(tree: Pick<PlanTree, "codeCells"> | null | undefined): CodeCellLanguage | null {
-	const mark = tree?.codeCells;
-	if (mark === true || mark === "lean") return "lean";
-	if (mark === "tla") return "tla";
-	if (mark === "cpp") return "cpp";
-	if (mark === "rocq") return "rocq";
-	return null;
 }
 
 // NOTE (2026-09-11 pivot, docs/archive/probe-teach-split.md): the tree once carried
@@ -105,7 +88,7 @@ export function derivePlanStatuses(tree: PlanTree, messages: readonly PartsCarri
 			// Either quizzing tool (quiz/explain) tags position — the mechanic
 			// is a settings switch; the fold recognizes both (owner 2026-09-27).
 			const snapshot = posedPluginQuestionOfPart(part);
-			if (part.pluginQuestion !== undefined ? snapshot?.variant !== "teach" : part.type !== "tool-quiz" && part.type !== "tool-explain" && part.type !== "tool-lean_exercise" && part.type !== "tool-tla_exercise" && part.type !== "tool-cpp_exercise" && part.type !== "tool-rocq_exercise") continue;
+			if (part.pluginQuestion !== undefined ? snapshot?.variant !== "teach" : part.type !== "tool-quiz" && part.type !== "tool-explain") continue;
 			const nodeId = ((snapshot?.input ?? part.input) as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue; // untagged/unknown — moves nothing
 			if (runs.at(-1) !== nodeId) runs.push(nodeId);
@@ -159,7 +142,7 @@ export function derivePlanStatusesLh(tree: PlanTree, messages: readonly LhMessag
 		for (const [contentIndex, block] of (content as Array<{ type?: string; name?: string; arguments?: unknown }>).entries()) {
 			const annotation = readPluginQuestionMessageAnnotation(m, contentIndex);
 			if (block.type !== "toolCall") continue;
-			if (annotation.status !== "absent" ? annotation.status !== "posed" || annotation.snapshot.variant !== "teach" : block.name !== "quiz" && block.name !== "explain" && block.name !== "lean_exercise" && block.name !== "tla_exercise" && block.name !== "cpp_exercise" && block.name !== "rocq_exercise") continue;
+			if (annotation.status !== "absent" ? annotation.status !== "posed" || annotation.snapshot.variant !== "teach" : block.name !== "quiz" && block.name !== "explain") continue;
 			const input = annotation.status === "posed" ? annotation.snapshot.input : block.arguments;
 			const nodeId = (input as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue;

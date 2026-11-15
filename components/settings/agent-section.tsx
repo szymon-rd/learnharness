@@ -182,12 +182,6 @@ export function composeQuizMechanics(agent: AgentSettings | undefined, mechanics
  *  agent section — never in the tool-toggles map (owner ruling). Absent =
  *  ON (the toggle discipline); the write is explicit either way, so an
  *  explicit-off record stays visible as stored. Pure — exported for tests. */
-/** Compose the "Code cells" control (owner, 2026-10-30): Off | Mixed in,
- *  its own agent subsection; absent = Off. Pure — exported for tests. */
-export function composeCodeCells(agent: AgentSettings | undefined, on: boolean): AgentSettings {
-	return { ...agent, codeCells: { enabled: on } };
-}
-
 export function composeGraphTools(agent: AgentSettings | undefined, on: boolean): AgentSettings {
 	return { ...agent, graphTools: { enabled: on } };
 }
@@ -395,39 +389,6 @@ export function AgentSection({
 	const [workerConcurrencyError, setWorkerConcurrencyError] = useState<string | null>(null);
 	const menuAnchorRef = useRef<HTMLSpanElement>(null);
 	const interactions = useInteractionLayers();
-
-	/** Lean for code cells (/api/lean/status): null while loading. */
-	const [lean, setLean] = useState<{ available: boolean; reason?: string; mathlib?: string | null } | null>(null);
-	useEffect(() => {
-		fetch("/api/lean/status")
-			.then((r) => r.json())
-			.then(setLean)
-			.catch(() => setLean({ available: false, reason: "Could not reach the server." }));
-	}, []);
-	/** Rocq for code cells (/api/rocq/status): null while loading. */
-	const [rocq, setRocq] = useState<{ available: boolean; reason?: string } | null>(null);
-	useEffect(() => {
-		fetch("/api/rocq/status")
-			.then((r) => r.json())
-			.then(setRocq)
-			.catch(() => setRocq({ available: false, reason: "Could not reach the server." }));
-	}, []);
-	/** C++ for code cells (/api/cpp/status): null while loading. */
-	const [cpp, setCpp] = useState<{ available: boolean; reason?: string } | null>(null);
-	useEffect(() => {
-		fetch("/api/cpp/status")
-			.then((r) => r.json())
-			.then(setCpp)
-			.catch(() => setCpp({ available: false, reason: "Could not reach the server." }));
-	}, []);
-	/** TLA+ for code cells (/api/tla/status): null while loading. */
-	const [tla, setTla] = useState<{ available: boolean; reason?: string } | null>(null);
-	useEffect(() => {
-		fetch("/api/tla/status")
-			.then((r) => r.json())
-			.then(setTla)
-			.catch(() => setTla({ available: false, reason: "Could not reach the server." }));
-	}, []);
 
 	const refreshSearch = () =>
 		fetch("/api/search")
@@ -925,57 +886,6 @@ export function AgentSection({
 											)}
 										>
 											{m === "choice" ? "Multiple choice" : "Free recall"}
-										</button>
-									);
-								})}
-							</div>
-						</SettingsRow>
-					);
-				})()}
-				{/* Code cells (owner, 2026-10-30; TLA+ 2026-11-05): Off | Mixed in.
-				    "Mixed in" lets the teacher add Lean or TLA+ exercises among its
-				    checks — only in sessions about that language (the plan's own
-				    mark). Greyed only when neither service is available. */}
-				{(() => {
-					const on = agent?.codeCells?.enabled === true;
-					const services = [lean, tla, cpp, rocq];
-					const unavailable = services.every((s) => s !== null && !s.available);
-					const available = [lean?.available ? "Lean" : null, tla?.available ? "TLA+" : null, cpp?.available ? "C++" : null, rocq?.available ? "Rocq" : null].filter(
-						(l): l is string => l !== null,
-					);
-					const languages = available.length ? available.join(", ").replace(/, ([^,]*)$/, " or $1") : "Lean, TLA+, C++ or Rocq";
-					return (
-						<SettingsRow
-							label="Code cells"
-							hint={
-								unavailable
-									? "No code-cell language (Lean, TLA+, C++, Rocq) is available on this server."
-									: `${languages} exercises among the checks, only when a session is about that language`
-							}
-							testid="code-cells-row"
-						>
-							<div
-								role="radiogroup"
-								aria-label="Code cells"
-								className={cn("flex rounded-lg border border-border/60 bg-muted/30 p-0.5", unavailable && !on && "opacity-50")}
-							>
-								{([false, true] as const).map((value) => {
-									const active = value === on;
-									return (
-										<button
-											key={String(value)}
-											type="button"
-											role="radio"
-											aria-checked={active}
-											disabled={unavailable && value && !on}
-											data-testid={`code-cells-${value ? "mixed" : "off"}`}
-											onClick={() => onSectionChange(composeCodeCells(agent, value))}
-											className={cn(
-												"h-8 rounded-md px-3 text-sm font-medium transition-colors disabled:cursor-not-allowed",
-												active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-											)}
-										>
-											{value ? "Mixed in" : "Off"}
 										</button>
 									);
 								})}

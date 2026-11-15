@@ -2,9 +2,7 @@
 
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { StatusBadge } from "@/components/ui/status-badge";
-import type { ArtifactPartProps, CppVerdict, TlaVerdict } from "@/src/core";
-import { CppVerdictView } from "@/components/cpp/cpp-verdict";
-import { TlaVerdictView } from "@/components/tla/tla-verdict";
+import type { ArtifactPartProps } from "@/src/core";
 
 /**
  * The practice transcript cards (practice sessions, owner design
@@ -58,14 +56,6 @@ export interface PracticeThinkingData {
 	commit?: boolean;
 	text: string;
 	images?: readonly Readonly<import("@earendil-works/pi-ai").ImageContent>[];
-	/** A Lean problem's submission: the proof and the server's verdict. */
-	lean?: { proof: string; summary?: string; verdict?: { passed: boolean; errors: { line: number; message: string }[] } };
-	/** A TLA+ problem's submission: the solution and the server's verdict. */
-	tla?: { solution: string; summary?: string; verdict?: TlaVerdict };
-	/** A C++ problem's submission: the solution and the server's verdict. */
-	cpp?: { solution: string; summary?: string; verdict?: CppVerdict };
-	/** A Rocq problem's submission, like Lean's. */
-	rocq?: { proof: string; summary?: string; verdict?: { passed: boolean; errors: { line: number; message: string }[] } };
 }
 
 export function ProblemCard({ part }: ArtifactPartProps) {
@@ -306,73 +296,5 @@ export function ThinkingCard({ data }: { data: PracticeThinkingData }) {
 	// 50%-italic quote block on expand. Legacy records' commit flag is
 	// deliberately unread (one lane now). A TRANSCRIPT row (owner round,
 	// 2026-10-07): full-width band + rail, arriving expanded.
-	const lean = data.lean ?? (data.rocq ? { ...data.rocq } : undefined);
-	const prover = data.rocq ? "Rocq" : "Lean";
-	const tla = data.tla;
-	const cpp = data.cpp;
-	return (
-		<>
-			{(data.text.trim() !== "" || !!data.images?.length) && <ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} images={data.images} defaultOpen />}
-			{lean && (
-				<div className="my-1 rounded-xl border bg-card p-4" data-testid="lean-submission-card" data-prover={prover}>
-					<div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						Your proof
-						{!lean.verdict ? (
-							<span className="rounded bg-muted px-1.5 py-0.5 normal-case">checking with {prover}…</span>
-						) : lean.verdict.passed ? (
-							<StatusBadge text="passes" color="var(--lh-success)" />
-						) : (
-							<StatusBadge text="does not pass" color="var(--lh-error)" />
-						)}
-					</div>
-					<pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">{lean.proof || "(empty proof)"}</pre>
-					{lean.verdict && !lean.verdict.passed && (
-						<div className="mt-2 text-sm">
-							{lean.summary}
-							<ul className="mt-1.5 flex flex-col gap-1.5">
-								{lean.verdict.errors.map((e, i) => (
-									<li key={i} className="whitespace-pre-wrap rounded-md bg-error/10 px-2.5 py-1.5 font-mono text-xs">
-										<span className="text-muted-foreground">{e.line > 0 ? `line ${e.line}: ` : "statement: "}</span>
-										{e.message}
-									</li>
-								))}
-							</ul>
-						</div>
-					)}
-				</div>
-			)}
-			{tla && (
-				<div className="my-1 rounded-xl border bg-card p-4" data-testid="tla-submission-card">
-					<div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						Your solution
-						{!tla.verdict ? (
-							<span className="rounded bg-muted px-1.5 py-0.5 normal-case">checking with TLC…</span>
-						) : tla.verdict.passed ? (
-							<StatusBadge text="passes TLC" color="var(--lh-success)" />
-						) : (
-							<StatusBadge text="does not pass" color="var(--lh-error)" />
-						)}
-					</div>
-					<pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">{tla.solution || "(empty solution)"}</pre>
-					{tla.verdict && !tla.verdict.passed && <TlaVerdictView verdict={tla.verdict} summary={tla.summary ?? ""} className="mt-2" />}
-				</div>
-			)}
-			{cpp && (
-				<div className="my-1 rounded-xl border bg-card p-4" data-testid="cpp-submission-card">
-					<div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						Your code
-						{!cpp.verdict ? (
-							<span className="rounded bg-muted px-1.5 py-0.5 normal-case">compiling and running the tests…</span>
-						) : cpp.verdict.passed ? (
-							<StatusBadge text="all tests pass" color="var(--lh-success)" />
-						) : (
-							<StatusBadge text="does not pass" color="var(--lh-error)" />
-						)}
-					</div>
-					<pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2 font-mono text-xs leading-relaxed">{cpp.solution || "(empty)"}</pre>
-					{cpp.verdict && !cpp.verdict.passed && <CppVerdictView verdict={cpp.verdict} summary={cpp.summary ?? ""} className="mt-2" />}
-				</div>
-			)}
-		</>
-	);
+	return <ThinkingBlock testId="thinking-card" label="YOUR THINKING" text={data.text} images={data.images} defaultOpen />;
 }

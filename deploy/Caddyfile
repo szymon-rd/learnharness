@@ -12,11 +12,12 @@
 		}
 	}
 
-	# Lean code cells: the language-server WebSocket, for paired devices only
-	# (the app answers the check; an unpaired device gets its 401).
+	# Lean code cells (the code-cells plugin): the language-server WebSocket,
+	# for paired devices only. The check is any cheap read-only API route:
+	# the app answers it only for a paired device (others get its 401).
 	handle /lean/lsp {
 		forward_auth learnharness:3210 {
-			uri /api/lean/authorize
+			uri /api/themes
 			# The check is a plain GET, not a WebSocket upgrade.
 			header_up -Upgrade
 			header_up -Connection
@@ -27,7 +28,7 @@
 	# Rocq code cells: the same for the coq-lsp WebSocket.
 	handle /rocq/lsp {
 		forward_auth learnharness:3210 {
-			uri /api/rocq/authorize
+			uri /api/themes
 			header_up -Upgrade
 			header_up -Connection
 		}

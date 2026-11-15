@@ -58,12 +58,6 @@ export { subscriptionControlsResponse, subscriptionBrowserResponse } from "./web
 export { sessionCost } from "./pricing.ts";
 // Phone access (remote mode): the /pair route checks codes and mints the cookie.
 export { PAIR_PATH, REMOTE_COOKIE, accessCodeMatches, remoteAccessMode, remoteCookieValue } from "./remote-access.ts";
-export { leanServiceUrl, leanChecker } from "./lean-service.ts";
-export { tlaServiceUrl, tlaChecker } from "./tla-service.ts";
-export { tlaCellCheckResponse } from "./tla-answer.ts";
-export { cppServiceUrl, cppChecker } from "./cpp-service.ts";
-export { cppCellCheckResponse } from "./cpp-answer.ts";
-export { rocqServiceUrl, rocqChecker } from "./rocq-service.ts";
 export { initializePlugins, getPluginHost, getPluginAgentContributions, getPluginQuestionTypeResolver, pluginTransport } from "./plugins.ts";
 export { createPluginDocumentRoute } from "./plugin-transport.ts";
 export { pluginProblemAvailabilityOf, type ProblemTypeResolver } from "./plugin-problems.ts";

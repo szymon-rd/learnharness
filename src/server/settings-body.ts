@@ -218,15 +218,6 @@ export function parseAgentSettingsBody(body: unknown): SettingsBodyResult<AgentS
 		}
 		settings.graphTools = graphTools.enabled === undefined ? {} : { enabled: graphTools.enabled };
 	}
-	// Code cells (owner, 2026-10-30): same strict shape. Absent = OFF.
-	if (raw.codeCells !== undefined) {
-		const codeCells = asRecord(raw.codeCells);
-		if (!codeCells) return { ok: false, error: "codeCells must be an object" };
-		if (codeCells.enabled !== undefined && typeof codeCells.enabled !== "boolean") {
-			return { ok: false, error: "codeCells.enabled must be a boolean" };
-		}
-		settings.codeCells = codeCells.enabled === undefined ? {} : { enabled: codeCells.enabled };
-	}
 	if (raw.fileAccess !== undefined) {
 		const parsed = parseFileAccessSettings(raw.fileAccess);
 		if (!parsed.ok) return parsed;
