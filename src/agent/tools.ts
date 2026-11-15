@@ -23,6 +23,7 @@ import { readTool } from "./tools/read.ts";
 import { lsTool } from "./tools/ls.ts";
 import { findTool } from "./tools/find.ts";
 import { grepTool } from "./tools/grep.ts";
+import { createShowImageTool } from "./tools/show-image.ts";
 import { healToolRecord } from "./tools/heal.ts";
 import { leanExerciseToolFor } from "./tools/lean.ts";
 import type { LeanChecker } from "../core/lean-cell.ts";
@@ -38,7 +39,7 @@ export { jobTools };
 export type { ProbeDoneContext } from "./tools/probe.ts";
 
 /**
- * The agent-split tool composition (docs/probe-teach-split.md §1): the
+ * The agent-split tool composition (docs/archive/probe-teach-split.md §1): the
  * PROBER and the TEACHER are different agents with different tool sets.
  * The question tools share a NAME but are genuinely DIFFERENT tools —
  * the prober's quiz has NO nodeId field at all (its declaration is built
@@ -482,6 +483,9 @@ export function createTeacherTools(
 			ls: lsTool,
 			find: findTool,
 			grep: grepTool,
+			// The learner-image display twin of read (issue #363): teacher
+			// only, always on — it shows the learner their own file.
+			show_image: createShowImageTool(ctx),
 			...planTools(ctx, { codeCells: [...(ctx.lean ? (["lean"] as const) : []), ...(ctx.tla ? (["tla"] as const) : []), ...(ctx.cpp ? (["cpp"] as const) : []), ...(ctx.rocq ? (["rocq"] as const) : [])] }),
 			...(ctx.lean
 				? { lean_exercise: leanExerciseToolFor({ chatId: ctx.chatId, chatStore: ctx.chatStore, lean: ctx.lean }, (nodeId) => nodeIdProblem(ctx, nodeId)) }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { ViewReaderRef } from "./session-view-readers";
 import { ChevronRightIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,10 @@ import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { useIsPhone } from "@/components/phone-layout";
 import { ThinkingChip } from "@/components/thinking-chip";
+import { useOptionalInteractionLayers } from "./interaction-layers";
+import { isInteractionScopeEligible } from "./plugin-input-focus";
+import { PathInput } from "@/components/path-input";
+import type { PrepareThinkingSubmission } from "./plugin-submission-adapters";
 import { cn } from "@/lib/utils";
 import { LeanCell, type LeanCellStatus } from "@/components/lean/lean-cell";
 import { parseLeanExerciseInput, TaskFold } from "@/components/lean/lean-dock";
@@ -47,6 +52,7 @@ export interface PracticeCodeSubmission {
  */
 
 export interface PracticeDockProps {
+	viewReader?: ViewReaderRef<string>;
 	/** The active problem's tool-call id (submissions target it). */
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
@@ -60,6 +66,17 @@ export interface PracticeDockProps {
 	/** text — POST {type:"thinking"} (one lane; the register is read from the
 	 *  text). A Lean problem also sends the proof, a TLA+ problem the solution. */
 	onSubmit: (text: string, code?: PracticeCodeSubmission) => void;
+	onPrepareSubmission?: PrepareThinkingSubmission;
+	/** Host-owned alternative editor. The native statement/thinking/controls stay shared. */
+	customInput?: {
+		editor: ReactNode;
+		thinking: string;
+		onThinkingChange(value: string): void;
+		ready: boolean;
+		prepare: PrepareThinkingSubmission;
+	};
+	hasPendingInput?: boolean;
+	preparing?: boolean;
 	/** Escape in the thinking field stops dictation (threaded from the page). */
 	onEscape?: () => void;
 	/** Compaction is running for this chat (owner round 14): the thinking
@@ -69,12 +86,24 @@ export interface PracticeDockProps {
 	compactionRunning?: boolean;
 }
 
-export function PracticeDock({ problemCallId, chatId = "", input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false }: PracticeDockProps) {
-	const [thinking, setThinking] = useState("");
+export function PracticeDock({ viewReader, problemCallId, chatId = "", input, expanded, onExpand, onSubmit, onPrepareSubmission, customInput, hasPendingInput = false, preparing = false, onEscape, compactionRunning = false }: PracticeDockProps) {
+	const controller = useOptionalInteractionLayers();
+	const rootRef = useRef<HTMLElement>(null);
+	const [nativeThinking, setNativeThinking] = useState("");
+	const custom = useRef(customInput); custom.current = customInput;
+	const thinking = customInput ? customInput.thinking : nativeThinking;
+	const setThinking = (value: string) => { if (custom.current) custom.current.onThinkingChange(value); else setNativeThinking(value); };
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
 	// the tail, never a stale closure.
-	const thinkingRef = useRef("");
+	const thinkingRef = useRef(thinking); thinkingRef.current = thinking;
+	const editRevision = useRef(0);
+	useLayoutEffect(() => {
+		if (!viewReader) return;
+		const read = () => thinkingRef.current;
+		viewReader.current = read;
+		return () => { if (viewReader.current === read) viewReader.current = null; };
+	}, [viewReader]);
 	// A Lean problem (owner, 2026-10-30): the statement's Lean cell; every
 	// submission sends the current proof, and the server checks it.
 	const lean = useMemo(() => {
@@ -116,7 +145,7 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 		useCallback(
 			(t: string) => {
 				const v = joinDictation(thinkingRef.current, t);
-				thinkingRef.current = v;
+				thinkingRef.current = v; editRevision.current++;
 				setThinking(v);
 			},
 			[],
@@ -124,8 +153,20 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 		true,
 	);
 
+	useLayoutEffect(() => { viewReader?.changed?.(); }, [viewReader, thinking]);
 	const submit = () => {
-		if (compactionRunning) return;
+		if (compactionRunning || preparing) return;
+		// Code-cell problems keep their own submission (the proof/solution
+		// rides the thinking input); everything else goes through the host.
+		const prepare = code ? undefined : (customInput?.prepare ?? onPrepareSubmission);
+		if (prepare) {
+			if (customInput ? !customInput.ready : (!thinkingRef.current.trim() && !hasPendingInput)) return;
+			let capturedRevision = editRevision.current;
+			prepare(() => { capturedRevision = editRevision.current; return customInput ? thinkingRef.current : thinkingRef.current.trim(); }, captured => {
+				if (editRevision.current === capturedRevision && (customInput ? thinkingRef.current : thinkingRef.current.trim()) === captured) { thinkingRef.current = ""; setThinking(""); }
+			});
+			return;
+		}
 		const text = thinkingRef.current.trim();
 		if (text.length === 0 && !code) return;
 		thinkingRef.current = "";
@@ -141,12 +182,12 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 	 * means the field is often never focused — the window-level Enter
 	 * (typing surfaces and buttons excluded) submits the trace. Mounted
 	 * while the dock is — collapsed bar included (the trace survives). */
-	useEnterSubmits(submit);
+	useEnterSubmits(submit, rootRef);
 
 	/* ── the collapsed bar ── */
-	if (!expanded) {
-		return (
+	const bar = (
 			<button
+				ref={element => { if (!customInput) rootRef.current = element; }}
 				type="button"
 				data-testid="practice-dock-bar"
 				onClick={onExpand}
@@ -157,11 +198,13 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 				<span className="min-w-0 flex-1 truncate">{input.statement}</span>
 			</button>
 		);
-	}
+	if (!expanded && !customInput) return bar;
 
 	/* ── the expanded form ── */
 	return (
-		<div data-testid="practice-dock" data-problem={problemCallId}>
+		<div ref={element => { rootRef.current = element; }} data-testid="practice-dock" data-problem={problemCallId}>
+			{!expanded && bar}
+			<div hidden={!expanded}>
 			{/* The agent's half: the 'Problem' eyebrow (mirroring the quiz
 			    cards' label row — owner round, 2026-10-05) + the statement,
 			    markdown + LaTeX rendered, capped by the measured column
@@ -247,6 +290,8 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 				)}
 			</div>
 
+			{customInput?.editor}
+
 			{/* The learner's half: Enter SENDS (owner round 2, 2026-10-05);
 			    Shift+Enter makes a newline — less to decide about. */}
 			<div
@@ -264,17 +309,19 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 				</div>
 				)}
 				{showThinking && (
-				<textarea
+				<PathInput
 					value={thinking}
 					autoFocus={phone}
-					onChange={(e) => {
-						thinkingRef.current = e.target.value;
-						setThinking(e.target.value);
+					onValueChange={(value) => {
+						thinkingRef.current = value; editRevision.current++;
+						setThinking(value);
 					}}
 					onKeyDown={(e) => {
+						if (!isInteractionScopeEligible(e.currentTarget, controller)) return;
 						// Esc ends dictation — stopPropagation claims it (the
 						// keyboard machine) so the window chain doesn't also fire.
 						if (e.key === "Escape" && onEscape) {
+							controller?.claimEscape(e);
 							e.preventDefault();
 							e.stopPropagation();
 							onEscape();
@@ -289,7 +336,6 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 					}}
 					placeholder="Work here, think out loud."
 					enterKeyHint="send"
-					rows={4}
 					className={cn(
 						"field-sizing-content lh-input max-h-64 min-h-16 w-full resize-none bg-transparent px-2.5 pb-2 outline-none placeholder:text-muted-foreground",
 					)}
@@ -331,13 +377,14 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 					<Button
 						type="button"
 						data-testid="practice-send"
-						disabled={(thinking.trim().length === 0 && !code) || compactionRunning}
+						disabled={(customInput ? !customInput.ready : (!thinking.trim() && !hasPendingInput && !code)) || compactionRunning || preparing}
 						onClick={() => submit()}
 						className="ml-auto h-9 shrink-0 rounded-[6px] px-3.5 text-sm font-medium"
 					>
-						{code ? "Submit" : "Submit thinking"}
+						{customInput || code ? "Submit" : "Submit thinking"}
 					</Button>
 				</div>
+			</div>
 			</div>
 		</div>
 	);

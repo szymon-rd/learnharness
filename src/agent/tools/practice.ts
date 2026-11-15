@@ -15,6 +15,7 @@
  */
 
 import { Type, type Static } from "typebox";
+import { practiceProblemInputSchema } from "../../core/practice-problems.ts";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { resolveTargetId } from "../../core/chains.ts";
 import { readTool } from "./read.ts";
@@ -98,28 +99,7 @@ export function createPracticeGate(ctx: PracticeToolContext): PracticeGate {
 
 // ─── problem: the pose ───────────────────────────────────────────────────────
 
-export const problemInputObject = Type.Object({
-	statement: Type.String({
-		description:
-			"REQUIRED — the problem as the learner sees it (markdown + LaTeX). Must be self-contained and " +
-			"solvable from the session's material. NEVER announces the target proposition.",
-	}),
-	mode: Type.Union([Type.Literal("recall"), Type.Literal("discrimination"), Type.Literal("composition")], {
-		description: "REQUIRED — the demand mode: recall, discrimination, or composition (bare words, no quotes).",
-	}),
-	target: Type.Optional(
-		Type.Array(Type.String(), {
-			minItems: 1,
-			description:
-				"The proposition id(s) this problem exercises, from the session context's [id] list — include when " +
-				"the material is in the map; OMIT entirely when it is not (a topic session poses untagged problems). " +
-				"Names are normalized to ids at the seam; an unknown proposition is rejected.",
-		}),
-	),
-	modelSolution: Type.String({
-		description: "REQUIRED — the full solution, moves in order, committed BEFORE the learner sees the problem. This IS the reveal — conclude shows it verbatim; never re-author it.",
-	}),
-});
+export const problemInputObject = practiceProblemInputSchema;
 
 export type ProblemInput = Static<typeof problemInputObject>;
 
@@ -347,6 +327,39 @@ export function problemTool(
 	const withCpp = ctx?.cpp !== undefined;
 	const withRocq = ctx?.rocq !== undefined;
 	const schema = problemSchemaFor(withLean, withTla, withCpp, withRocq);
+
+	/** The problem's code-cell block, if any, against its checker. */
+	async function codeCellProblems(toolCallId: string, input: { target?: string[] }): Promise<string[]> {
+		const leanBlock = (input as { lean?: LeanBlock }).lean;
+		if (leanBlock) {
+			if (!withLean) return ["Lean problems are off here (the Code cells setting or Lean is unavailable). Pose it without `lean`."];
+			const leanProblems = await leanProblemProblems(ctx!, toolCallId, leanBlock, input.target ?? []);
+			if (leanProblems.length) return leanProblems;
+		}
+		const tlaBlock = (input as { tla?: TlaBlock }).tla;
+		if (tlaBlock) {
+			if (leanBlock) return ["A problem is either a Lean problem or a TLA+ problem, not both."];
+			if (!withTla) return ["TLA+ problems are off here (the Code cells setting or the TLA+ checker is unavailable). Pose it without `tla`."];
+			const tlaProblems = await tlaProblemProblems(ctx!, toolCallId, tlaBlock, input.target ?? []);
+			if (tlaProblems.length) return tlaProblems;
+		}
+		const cppBlock = (input as { cpp?: CppBlock }).cpp;
+		if (cppBlock) {
+			if (leanBlock || tlaBlock) return ["A problem has at most one code cell: lean, tla or cpp."];
+			if (!withCpp) return ["C++ problems are off here (the Code cells setting or the C++ checker is unavailable). Pose it without `cpp`."];
+			const cppProblems = await cppProblemProblems(ctx!, toolCallId, cppBlock, input.target ?? []);
+			if (cppProblems.length) return cppProblems;
+		}
+		const rocqBlock = (input as { rocq?: RocqBlock }).rocq;
+		if (rocqBlock) {
+			if (leanBlock || tlaBlock || cppBlock) return ["A problem has at most one code cell: lean, tla, cpp or rocq."];
+			if (!withRocq) return ["Rocq problems are off here (the Code cells setting or Rocq is unavailable). Pose it without `rocq`."];
+			const rocqProblems = await rocqProblemProblems(ctx!, toolCallId, rocqBlock, input.target ?? []);
+			if (rocqProblems.length) return rocqProblems;
+		}
+		return [];
+	}
+
 	return {
 		name: "problem",
 		label: "problem",
@@ -383,57 +396,30 @@ export function problemTool(
 			return { ...(healed as Record<string, unknown>), target: normalized } as never;
 		},
 		execute: async (toolCallId, input) => {
-			if (gate.problemActive) {
-				return invalidInputResult("problem", [
-					"a problem is already active — call conclude on it before posing the next one",
-				]);
+			const refused = admitPracticeProblem(gate, input, graphNodes);
+			if (refused) return refused;
+			// Code-cell blocks (lean/tla/cpp/rocq): checked after admission's
+			// cheap gates; a rejected block un-admits the problem.
+			const codeProblems = await codeCellProblems(toolCallId, input);
+			if (codeProblems.length) {
+				gate.problemActive = false;
+				return invalidInputResult("problem", codeProblems);
 			}
-			// TARGET VALIDATION (owner round 9, round 12): against the WHOLE
-			// graph, and ONLY when targets are present — absent means an
-			// untagged problem (topic sessions, owner round 12), which poses
-			// freely. A one-line rejection — the proposition list already
-			// sits in the agent's context (the [id] marker); no re-listing.
-			// The message teaches the exit: omitting always works.
-			if (graphNodes && input.target && input.target.length > 0) {
-				const list = graphNodes();
-				const unknown = input.target.filter((t) => resolveTargetId(t, list) === null);
-				if (unknown.length > 0) {
-					return invalidInputResult("problem", [
-						`target ${JSON.stringify(unknown)} is not a known proposition — targets must be proposition ids from the session context; if the material is not in the map, omit target entirely`,
-					]);
-				}
-			}
-			const leanBlock = (input as { lean?: LeanBlock }).lean;
-			if (leanBlock) {
-				if (!withLean) return invalidInputResult("problem", ["Lean problems are off here (the Code cells setting or Lean is unavailable). Pose it without `lean`."]);
-				const leanProblems = await leanProblemProblems(ctx!, toolCallId, leanBlock, input.target ?? []);
-				if (leanProblems.length) return invalidInputResult("problem", leanProblems);
-			}
-			const tlaBlock = (input as { tla?: TlaBlock }).tla;
-			if (tlaBlock) {
-				if (leanBlock) return invalidInputResult("problem", ["A problem is either a Lean problem or a TLA+ problem, not both."]);
-				if (!withTla) return invalidInputResult("problem", ["TLA+ problems are off here (the Code cells setting or the TLA+ checker is unavailable). Pose it without `tla`."]);
-				const tlaProblems = await tlaProblemProblems(ctx!, toolCallId, tlaBlock, input.target ?? []);
-				if (tlaProblems.length) return invalidInputResult("problem", tlaProblems);
-			}
-			const cppBlock = (input as { cpp?: CppBlock }).cpp;
-			if (cppBlock) {
-				if (leanBlock || tlaBlock) return invalidInputResult("problem", ["A problem has at most one code cell: lean, tla or cpp."]);
-				if (!withCpp) return invalidInputResult("problem", ["C++ problems are off here (the Code cells setting or the C++ checker is unavailable). Pose it without `cpp`."]);
-				const cppProblems = await cppProblemProblems(ctx!, toolCallId, cppBlock, input.target ?? []);
-				if (cppProblems.length) return invalidInputResult("problem", cppProblems);
-			}
-			const rocqBlock = (input as { rocq?: RocqBlock }).rocq;
-			if (rocqBlock) {
-				if (leanBlock || tlaBlock || cppBlock) return invalidInputResult("problem", ["A problem has at most one code cell: lean, tla, cpp or rocq."]);
-				if (!withRocq) return invalidInputResult("problem", ["Rocq problems are off here (the Code cells setting or Rocq is unavailable). Pose it without `rocq`."]);
-				const rocqProblems = await rocqProblemProblems(ctx!, toolCallId, rocqBlock, input.target ?? []);
-				if (rocqProblems.length) return invalidInputResult("problem", rocqProblems);
-			}
-			gate.problemActive = true;
 			return problemResult();
 		},
 	};
+}
+
+/** One synchronous admission for native AND plugin poses; no await can split the gate. */
+export function admitPracticeProblem(gate: PracticeGate, input: { target?: string[] }, graphNodes?: PracticeToolContext["graphNodes"], toolName = "problem") {
+	if (gate.problemActive) return invalidInputResult(toolName, ["a problem is already active — call conclude on it before posing the next one"]);
+	if (graphNodes && input.target?.length) {
+		const list = graphNodes();
+		const unknown = input.target.filter(target => resolveTargetId(target, list) === null);
+		if (unknown.length) return invalidInputResult(toolName, [`target ${JSON.stringify(unknown)} is not a known proposition — targets must be proposition ids from the session context; if the material is not in the map, omit target entirely`]);
+	}
+	gate.problemActive = true;
+	return undefined;
 }
 
 // ─── conclude: the end of a problem ──────────────────────────────────────────
@@ -496,9 +482,8 @@ export function concludeTool(gate: PracticeGate): AgentTool<typeof concludeInput
 }
 
 /** The practice toolset (the practice agent's whole registry). */
-export function practiceTools(ctx: PracticeToolContext): Record<string, AgentTool<any>> {
-	// ONE gate per turn, shared by both tools — the intra-turn truth.
-	const gate = createPracticeGate(ctx);
+export function practiceTools(ctx: PracticeToolContext, gate: PracticeGate = createPracticeGate(ctx)): Record<string, AgentTool<any>> {
+	// ONE gate per turn, shared by native/plugin poses and conclude.
 	// THE RARELY-NEEDED SET (owner round 10): read/ls/find/grep over the
 	// learner's files (always — the same read-only set the teacher and
 	// prober carry), the research + pdf jobs (available without search

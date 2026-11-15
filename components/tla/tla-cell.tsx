@@ -37,7 +37,7 @@ const STATUS_TEXT: Record<TlaCellStatus, string> = {
 const STATUS_CLASS: Record<TlaCellStatus, string> = {
 	parsing: "bg-muted text-muted-foreground",
 	parses: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-	errors: "bg-red-500/15 text-red-700 dark:text-red-400",
+	errors: "bg-error/15 text-error",
 	offline: "bg-muted text-muted-foreground",
 };
 

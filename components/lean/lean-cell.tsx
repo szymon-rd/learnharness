@@ -37,8 +37,8 @@ const STATUS_CLASS: Record<LeanCellStatus, string> = {
 	connecting: "bg-muted text-muted-foreground",
 	checking: "bg-muted text-muted-foreground",
 	passes: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
-	sorry: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-	errors: "bg-red-500/15 text-red-700 dark:text-red-400",
+	sorry: "bg-warning/15 text-warning",
+	errors: "bg-error/15 text-error",
 	offline: "bg-muted text-muted-foreground",
 };
 
@@ -625,7 +625,7 @@ export function LeanCell({ exercise, cellId, initialProof, onProofChange, onStat
 								key={i}
 								className={cn(
 									"whitespace-pre-wrap break-words rounded-md px-2 py-1 font-mono text-xs leading-relaxed",
-									(d.severity ?? 1) === 1 ? "bg-red-500/10" : "bg-amber-500/10",
+									(d.severity ?? 1) === 1 ? "bg-error/10" : "bg-warning/10",
 								)}
 							>
 								<span className="text-muted-foreground">line {d.range.start.line + 1}: </span>

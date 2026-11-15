@@ -190,7 +190,7 @@ describe("practice C++ problems", () => {
 			text: "",
 			cppSolution: "int x;",
 		});
-		const msg = newThinkingMessage("p1", "", undefined, undefined, {
+		const msg = newThinkingMessage("p1", "", undefined, undefined, undefined, {
 			solution: "int sum…",
 			summary: "1 of 3 tests fail.",
 			verdict: { passed: false, reason: "tests", errors: [], warnings: [], scope: "all", ms: 1, tests: [{ name: "negatives", hidden: true, passed: false, outcome: "check", message: "CHECK_EQ failed", ms: 1 }] },

@@ -15,7 +15,7 @@ export function TlaErrors({ errors }: { errors: TlaVerdict["errors"] }) {
 	return (
 		<ul className="mt-2 flex flex-col gap-1.5" data-testid="tla-errors">
 			{errors.map((e, i) => (
-				<li key={i} className="whitespace-pre-wrap break-words rounded-md bg-red-500/10 px-2.5 py-1.5 font-mono text-xs leading-relaxed">
+				<li key={i} className="whitespace-pre-wrap break-words rounded-md bg-error/10 px-2.5 py-1.5 font-mono text-xs leading-relaxed">
 					{e.line !== null && <span className="text-muted-foreground">line {e.line}: </span>}
 					{e.message}
 				</li>
@@ -49,7 +49,7 @@ export function TlaTrace({ trace }: { trace: TlaTraceState[] }) {
 										const before = prev?.vars.find((p) => p.name === v.name)?.value;
 										const changed = prev !== undefined && before !== v.value;
 										return (
-											<div key={v.name} className={cn("break-words rounded px-1", changed && "bg-amber-500/15")}>
+											<div key={v.name} className={cn("break-words rounded px-1", changed && "bg-warning/15")}>
 												<span className="text-muted-foreground">{v.name} = </span>
 												{v.value}
 											</div>
@@ -69,12 +69,12 @@ export function TlaTrace({ trace }: { trace: TlaTraceState[] }) {
 export function TlaVerdictView({ verdict, summary, className }: { verdict: TlaVerdict; summary: string; className?: string }) {
 	return (
 		<div className={cn("text-sm", className)} data-testid="tla-verdict" data-reason={verdict.reason}>
-			<div className={verdict.passed ? "text-green-600 dark:text-green-400" : "text-foreground"}>{summary}</div>
+			<div className={verdict.passed ? "text-success" : "text-foreground"}>{summary}</div>
 			<TlaErrors errors={verdict.errors} />
 			{verdict.unreachable && verdict.unreachable.length > 0 && (
 				<ul className="mt-2 flex flex-col gap-1">
 					{verdict.unreachable.map((label) => (
-						<li key={label} className="rounded-md bg-amber-500/10 px-2.5 py-1.5 text-xs">
+						<li key={label} className="rounded-md bg-warning/10 px-2.5 py-1.5 text-xs">
 							Never reached: {label}
 						</li>
 					))}

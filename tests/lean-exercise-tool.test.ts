@@ -237,7 +237,7 @@ describe("Lean problems in practice sessions", async () => {
 	it("a submission may carry only a proof, and the marker shows the verdict", () => {
 		assert.deepEqual(parseChatInput({ type: "thinking", problemCallId: "p1", text: "", proof: "  omega", lean: { forged: true } }), { type: "thinking", problemCallId: "p1", text: "", proof: "  omega" });
 		assert.throws(() => parseChatInput({ type: "thinking", problemCallId: "p1", text: " " }));
-		const m = newThinkingMessage("p1", "", { proof: "  simp", summary: "Lean reports an error.", verdict: { passed: false, reason: "errors", ms: 1, errors: [{ line: 1, message: "simp made no progress" }] } });
+		const m = newThinkingMessage("p1", "", undefined, { proof: "  simp", summary: "Lean reports an error.", verdict: { passed: false, reason: "errors", ms: 1, errors: [{ line: 1, message: "simp made no progress" }] } });
 		assert.match(m.content as string, /Submitted Lean proof:\n {2}simp/);
 		assert.match(m.content as string, /Lean verdict: does not pass — Lean reports an error\.\n- proof line 1: simp made no progress/);
 	});

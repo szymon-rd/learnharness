@@ -10,6 +10,5 @@ phone-access-code
 dist
 mobile
 tests
-docs
 deploy
 *.log

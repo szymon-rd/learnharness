@@ -1,5 +1,6 @@
 "use client";
 
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useContext, useState } from "react";
 import { CodeReviewsContext } from "@/components/code-reviews";
 import { ToolContentResponse } from "@/components/ai-elements/message";
@@ -28,9 +29,9 @@ export function TlaAnsweredCard({ answer, toolCallId }: { answer: QuestionAnswer
 					{!tla ? (
 						<span className="rounded bg-muted px-1.5 py-0.5 normal-case">checking with TLC…</span>
 					) : passed ? (
-						<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">passes</span>
+						<StatusBadge text="passes" color="var(--lh-success)" />
 					) : (
-						<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">does not pass</span>
+						<StatusBadge text="does not pass" color="var(--lh-error)" />
 					)}
 				</div>
 				<div className="mb-3 font-medium">
@@ -42,7 +43,7 @@ export function TlaAnsweredCard({ answer, toolCallId }: { answer: QuestionAnswer
 				{tla && <TlaVerdictView verdict={tla.verdict} summary={tla.summary} />}
 				{review && (
 					<div
-						className={review.accepted ? "mt-2 rounded-md bg-green-500/10 px-2.5 py-1.5 text-sm" : "mt-2 rounded-md bg-red-500/10 px-2.5 py-1.5 text-sm"}
+						className={review.accepted ? "mt-2 rounded-md bg-success/10 px-2.5 py-1.5 text-sm" : "mt-2 rounded-md bg-error/10 px-2.5 py-1.5 text-sm"}
 						data-testid="tla-review"
 						data-accepted={review.accepted}
 					>

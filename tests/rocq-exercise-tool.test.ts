@@ -145,7 +145,7 @@ describe("practice Rocq problems", () => {
 			text: "",
 			rocqProof: "Proof. Qed.",
 		});
-		const msg = newThinkingMessage("p1", "", undefined, undefined, undefined, {
+		const msg = newThinkingMessage("p1", "", undefined, undefined, undefined, undefined, {
 			proof: "Proof. Qed.",
 			summary: "Rocq reports an error.",
 			verdict: { passed: false, reason: "errors", ms: 1, errors: [{ line: 1, message: "Attempt to save an incomplete proof" }] },

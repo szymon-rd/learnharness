@@ -256,7 +256,7 @@ describe("practice TLA+ problems", () => {
 	});
 
 	it("a submission carries the solution and TLC's verdict to the model", () => {
-		const msg = newThinkingMessage("pr2", "my attempt", undefined, {
+		const msg = newThinkingMessage("pr2", "my attempt", undefined, undefined, {
 			solution: "Init == x = 0",
 			summary: "TLC finds no error (4 distinct states).",
 			verdict: { passed: true, reason: "passed", errors: [], ms: 1, distinctStates: 4 },

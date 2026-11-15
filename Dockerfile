@@ -11,7 +11,9 @@ ENV NEXT_TELEMETRY_DISABLED=1 \
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
-RUN npx next build && npm prune --omit=dev --no-audit --no-fund
+# npm run build also builds the core plugins (core-plugins.json); each
+# plugin's own dependencies come from plugins:setup.
+RUN npm run plugins:setup && npm run build && npm prune --omit=dev --no-audit --no-fund
 
 FROM node:24-bookworm-slim
 # Chromium runs the agent's interactive demos; the fonts cover most scripts

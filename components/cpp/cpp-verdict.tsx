@@ -15,7 +15,7 @@ export function CppDiagnostics({ items, tone = "error" }: { items: CppDiagnostic
 	return (
 		<ul className="mt-2 flex flex-col gap-1.5" data-testid={tone === "error" ? "cpp-errors" : "cpp-warnings"}>
 			{items.map((e, i) => (
-				<li key={i} className={cn("whitespace-pre-wrap break-words rounded-md px-2.5 py-1.5 font-mono text-xs leading-relaxed", tone === "error" ? "bg-red-500/10" : "bg-amber-500/10")}>
+				<li key={i} className={cn("whitespace-pre-wrap break-words rounded-md px-2.5 py-1.5 font-mono text-xs leading-relaxed", tone === "error" ? "bg-error/10" : "bg-warning/10")}>
 					{e.line !== null && <span className="text-muted-foreground">line {e.line}: </span>}
 					{tone === "warning" && <span className="text-muted-foreground">warning: </span>}
 					{e.message}
@@ -45,7 +45,7 @@ export function CppTests({ tests }: { tests: CppTestResult[] }) {
 							{t.name}
 							{t.hidden && <span className="ml-1.5 font-normal text-muted-foreground">(hidden)</span>}
 						</span>
-						<span className={t.passed ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}>{OUTCOME_TEXT[t.outcome]}</span>
+						<span className={t.passed ? "text-success" : "text-error"}>{OUTCOME_TEXT[t.outcome]}</span>
 					</div>
 					{!t.passed && !t.hidden && t.message && (
 						<pre className="mt-1 whitespace-pre-wrap break-words font-mono leading-relaxed">
@@ -71,7 +71,7 @@ export function CppTests({ tests }: { tests: CppTestResult[] }) {
 export function CppVerdictView({ verdict, summary, className, showWarnings = true }: { verdict: CppVerdict; summary: string; className?: string; showWarnings?: boolean }) {
 	return (
 		<div className={cn("text-sm", className)} data-testid="cpp-verdict" data-reason={verdict.reason}>
-			<div className={verdict.passed ? "text-green-600 dark:text-green-400" : "text-foreground"}>{summary}</div>
+			<div className={verdict.passed ? "text-success" : "text-foreground"}>{summary}</div>
 			<CppDiagnostics items={verdict.errors} />
 			{showWarnings && <CppDiagnostics items={verdict.warnings} tone="warning" />}
 			<CppTests tests={verdict.tests} />

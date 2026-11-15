@@ -3,7 +3,10 @@
 import { memo, useState } from "react";
 import { ConfidenceRail } from "@/components/confidence-rail";
 import { GlyphMark } from "@/components/ui/glyph-mark";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { SubmittedImages } from "./submitted-images";
 import { ThinkingBlock } from "@/components/thinking-block";
+import { PathText } from "@/components/file-path-chip";
 import { cn } from "@/lib/utils";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { LeanAnsweredCard } from "@/components/lean/lean-answered-card";
@@ -61,8 +64,8 @@ export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, in
 		    rendered as its own user-side block ABOVE the card, the unified
 		    ThinkingBlock, instead of an inset inside the answer. Same muted
 		    rail as before; the label is now plain "Your thinking". */}
-		{answer.readingThinking && (
-			<ThinkingBlock testId="reading-thinking-block" label="YOUR THINKING" text={answer.readingThinking} defaultOpen />
+		{(answer.readingThinking || answer.images?.readingThinking?.length) && (
+			<ThinkingBlock testId="reading-thinking-block" label="YOUR THINKING" text={answer.readingThinking ?? ""} images={answer.images?.readingThinking} defaultOpen />
 		)}
 		{/* [&>*:last-child]:mb-0 (owner round, 2026-10-07): on ask cards the
 		    thinking row is the last child — its my-3 stacked with the card's
@@ -89,11 +92,11 @@ export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, in
 											: "Question"}
 				{isQuiz &&
 					(answer.dontKnow ? (
-						<span className="rounded bg-muted px-1.5 py-0.5">didn't know</span>
+						<StatusBadge text="didn't know" />
 					) : answer.correct ? (
-						<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">correct</span>
+						<StatusBadge text="correct" color="var(--lh-success)" />
 					) : (
-						<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">incorrect</span>
+						<StatusBadge text="incorrect" color="var(--lh-error)" />
 					))}
 			</div>
 			<div className="mb-3 font-medium">
@@ -117,10 +120,10 @@ export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, in
 								key={opt.index}
 								className={cn(
 									"flex items-center gap-2 rounded-lg border px-3 py-1.5",
-									sel && key && "border-green-500/60 bg-green-500/10",
-									sel && !key && isQuiz && "border-red-500/60 bg-red-500/10",
+									sel && key && "border-success/60 bg-success/10",
+									sel && !key && isQuiz && "border-error/60 bg-error/10",
 									sel && !isQuiz && "border-primary bg-accent",
-									!sel && key && "border-green-500/40",
+									!sel && key && "border-success/40",
 								)}
 							>
 								{isQuiz && (
@@ -131,9 +134,9 @@ export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, in
 										data-mark={sel && key ? "check" : sel && !key ? "x" : !sel && key ? "check" : undefined}
 										className={cn(
 											"flex shrink-0 items-center",
-											sel && key && "text-green-500",
-											sel && !key && "text-red-500",
-											!sel && key && "text-green-500",
+											sel && key && "text-success",
+											sel && !key && "text-error",
+											!sel && key && "text-success",
 										)}
 									>
 										{/* Owner round 8: a touch smaller than the text (size-4→size-3.5,
@@ -163,13 +166,14 @@ export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, in
 							data-testid="answered-other"
 							className="flex items-center gap-2 rounded-lg border border-primary bg-accent px-3 py-1.5"
 						>
-							<span>“{answer.other}”</span>
+							<span>“<PathText text={answer.other} />”</span>
 						</div>
 					)}
 				</div>
 			)}
 
-			{answer.text && <div className="lh-prose mt-2 whitespace-pre-wrap">“{answer.text}”</div>}
+			{answer.text && <div className="lh-prose mt-2 whitespace-pre-wrap">“<PathText text={answer.text} />”</div>}
+			<SubmittedImages images={answer.images?.answer} />
 
 			{/* The confidence record (owner round 6): the slider's rail, disc
 			    removed — the missing handle itself says "this is a record, not a
@@ -190,7 +194,7 @@ export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, in
 				<div className="mt-2 text-sm text-muted-foreground">Answered “I don't know”.</div>
 			)}
 
-			{(answer.thinking ?? answer.note) && (
+			{((answer.thinking ?? answer.note) || answer.images?.thinking?.length) && (
 				/* The SAME unified row (owner round, 2026-10-05): the quiz answer's
 				    thinking is the identical collapsible ThinkingBlock — one
 				    geometry, but NO band on the card (owner round five, 2026-10-07:
@@ -199,6 +203,7 @@ export const AnsweredCard = memo(function AnsweredCard({ answer: savedAnswer, in
 					testId="your-thinking"
 					label="YOUR THINKING"
 					text={answer.thinking ?? answer.note ?? ""}
+					images={answer.images?.thinking}
 					inCard
 				/>
 			)}

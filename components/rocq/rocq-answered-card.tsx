@@ -1,5 +1,6 @@
 "use client";
 
+import { StatusBadge } from "@/components/ui/status-badge";
 import { useState } from "react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { ThinkingBlock } from "@/components/thinking-block";
@@ -23,9 +24,9 @@ export function RocqAnsweredCard({ answer }: { answer: QuestionAnswerData }) {
 					{!rocq ? (
 						<span className="rounded bg-muted px-1.5 py-0.5 normal-case">checking with Rocq…</span>
 					) : rocq.verdict.passed ? (
-						<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">passes</span>
+						<StatusBadge text="passes" color="var(--lh-success)" />
 					) : (
-						<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">does not pass</span>
+						<StatusBadge text="does not pass" color="var(--lh-error)" />
 					)}
 				</div>
 				<div className="mb-3 font-medium">
@@ -35,12 +36,12 @@ export function RocqAnsweredCard({ answer }: { answer: QuestionAnswerData }) {
 					{proof || "(empty proof)"}
 				</pre>
 				{rocq && (
-					<div className={cn("text-sm", rocq.verdict.passed ? "text-green-600 dark:text-green-400" : "text-foreground")}>
+					<div className={cn("text-sm", rocq.verdict.passed ? "text-success" : "text-foreground")}>
 						{rocq.summary}
 						{rocq.verdict.errors.length > 0 && (
 							<ul className="mt-2 flex flex-col gap-1.5">
 								{rocq.verdict.errors.map((e, i) => (
-									<li key={i} className="rounded-md bg-red-500/10 px-2.5 py-1.5 font-mono text-xs whitespace-pre-wrap">
+									<li key={i} className="rounded-md bg-error/10 px-2.5 py-1.5 font-mono text-xs whitespace-pre-wrap">
 										<span className="text-muted-foreground">{e.line > 0 ? `line ${e.line}: ` : "statement: "}</span>
 										{e.message}
 									</li>
