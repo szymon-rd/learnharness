@@ -4,7 +4,7 @@
  * Part of the domain-split contracts (src/core/contracts/): each domain file
  * is owned outright by its stream — cross-domain schema changes go through
  * master. Pure types + protocol docs + tiny pure helpers; type-only imports
- * of "ai" (safe everywhere: server, client, tests). See docs/vision.md.
+ * of "ai" (safe everywhere: server, client, tests). See docs/archive/vision.md.
  */
 // ─── Plan tree (vision §2 "formal plan tree") ────────────────────────────────
 // A session-scoped dependency tree authored by the teacher via plan tools.
@@ -31,26 +31,9 @@ export interface PlanTree {
 	edges: PlanEdge[];
 	/** Increments on every mutation — lets the UI animate/react to changes. */
 	version: number;
-	/** The code-cell language of the session (owner, 2026-10-30; TLA+
-	 *  2026-11-05): plan_init's codeCells mark. Only then may the teacher pose
-	 *  code cells, and only in that language. `true` is the pre-TLA+ form of
-	 *  "lean" (read it through planCodeCells). Absent = no code cells. */
-	codeCells?: CodeCellLanguage | true;
 }
 
-export type CodeCellLanguage = "lean" | "tla" | "cpp" | "rocq";
-
-/** The plan's code-cell language, reading the old boolean mark as Lean. */
-export function planCodeCells(tree: Pick<PlanTree, "codeCells"> | null | undefined): CodeCellLanguage | null {
-	const mark = tree?.codeCells;
-	if (mark === true || mark === "lean") return "lean";
-	if (mark === "tla") return "tla";
-	if (mark === "cpp") return "cpp";
-	if (mark === "rocq") return "rocq";
-	return null;
-}
-
-// NOTE (2026-09-11 pivot, docs/probe-teach-split.md): the tree once carried
+// NOTE (2026-09-11 pivot, docs/archive/probe-teach-split.md): the tree once carried
 // `currentNodeId` / `doneNodeIds` — progress fields. They are GONE by
 // design: the tree carries structure ONLY; position and visited-ness derive
 // from the transcript at render time (derivePlanStatuses below). There is no
@@ -61,7 +44,7 @@ export type PlanNodeStatus = "current" | "visited" | "upcoming";
 
 // ─── derived statuses: position from CALLS, never from results ─────────────
 //
-// (2026-09-11 pivot — docs/probe-teach-split.md §3.) The teacher AUTHORS the
+// (2026-09-11 pivot — docs/archive/probe-teach-split.md §3.) The teacher AUTHORS the
 // map (plan_init, mermaid — re-callable rewrite) and never tracks progress.
 // The quiz `nodeId` means "this question is ABOUT this node" — a position
 // signal, never a completion signal. Derivation reads CALLS only:
@@ -79,7 +62,7 @@ export type PlanNodeStatus = "current" | "visited" | "upcoming";
 /** Minimal structural message slice — anything with typed parts (mirrors
  * phases.ts: pure, no runtime deps, safe on server, client, and in tests). */
 interface PartsCarrier {
-	parts: Array<{ type: string; state?: string; input?: unknown; output?: unknown }>;
+	parts: Array<{ type: string; state?: string; input?: unknown; output?: unknown; pluginQuestion?: unknown }>;
 }
 
 export interface DerivedPlanStatuses {
@@ -104,8 +87,9 @@ export function derivePlanStatuses(tree: PlanTree, messages: readonly PartsCarri
 		for (const part of m.parts) {
 			// Either quizzing tool (quiz/explain) tags position — the mechanic
 			// is a settings switch; the fold recognizes both (owner 2026-09-27).
-			if (part.type !== "tool-quiz" && part.type !== "tool-explain" && part.type !== "tool-lean_exercise" && part.type !== "tool-tla_exercise" && part.type !== "tool-cpp_exercise" && part.type !== "tool-rocq_exercise") continue;
-			const nodeId = (part.input as { nodeId?: unknown } | undefined)?.nodeId;
+			const snapshot = posedPluginQuestionOfPart(part);
+			if (part.pluginQuestion !== undefined ? snapshot?.variant !== "teach" : part.type !== "tool-quiz" && part.type !== "tool-explain") continue;
+			const nodeId = ((snapshot?.input ?? part.input) as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue; // untagged/unknown — moves nothing
 			if (runs.at(-1) !== nodeId) runs.push(nodeId);
 		}
@@ -143,6 +127,8 @@ export interface PlanToolResult {
 // ─── the native fold (Wave D: derivePlanStatuses over LhMessage[]) ───────────
 
 import type { LhMessage } from "../native-messages.ts";
+import { posedPluginQuestionOfPart } from "../tool-parts.ts";
+import { readPluginQuestionMessageAnnotation } from "../plugin-questions.ts";
 
 /** The same derivation over the NATIVE record: quiz CALLS only (any state —
  *  a dangling call still moves position; results feed nothing). */
@@ -153,9 +139,12 @@ export function derivePlanStatusesLh(tree: PlanTree, messages: readonly LhMessag
 		if ((m as { role?: string }).role !== "assistant") continue;
 		const content = (m as { content?: unknown }).content;
 		if (!Array.isArray(content)) continue;
-		for (const block of content as Array<{ type?: string; name?: string; arguments?: unknown }>) {
-			if (block.type !== "toolCall" || (block.name !== "quiz" && block.name !== "explain" && block.name !== "lean_exercise" && block.name !== "tla_exercise" && block.name !== "cpp_exercise" && block.name !== "rocq_exercise")) continue;
-			const nodeId = (block.arguments as { nodeId?: unknown } | undefined)?.nodeId;
+		for (const [contentIndex, block] of (content as Array<{ type?: string; name?: string; arguments?: unknown }>).entries()) {
+			const annotation = readPluginQuestionMessageAnnotation(m, contentIndex);
+			if (block.type !== "toolCall") continue;
+			if (annotation.status !== "absent" ? annotation.status !== "posed" || annotation.snapshot.variant !== "teach" : block.name !== "quiz" && block.name !== "explain") continue;
+			const input = annotation.status === "posed" ? annotation.snapshot.input : block.arguments;
+			const nodeId = (input as { nodeId?: unknown } | undefined)?.nodeId;
 			if (typeof nodeId !== "string" || !ids.has(nodeId)) continue;
 			if (runs.at(-1) !== nodeId) runs.push(nodeId);
 		}

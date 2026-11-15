@@ -1,0 +1,11 @@
+{
+  "apiVersion": 1,
+  "id": "code-cells",
+  "name": "Code cells",
+  "version": "0.1.0",
+  "minAppVersion": "0.6.1",
+  "description": "Lean, TLA+, C++ and Rocq exercises in teaching and practice, checked by the server's checker services (LH_LEAN_URL, LH_TLA_URL, LH_CPP_URL, LH_ROCQ_URL).",
+  "main": "main.js",
+  "backend": "backend.cjs",
+  "styles": "styles.css"
+}

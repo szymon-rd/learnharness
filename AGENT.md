@@ -91,6 +91,23 @@ Owner preferences that held throughout:
      (`plan_init.codeCells: "lean" | "tla"`; old `true` = Lean). "Not two code
      cells in a row" counts Lean and TLA+ together.
    - Practice: TLA+ problems for propositions from TLA+-marked sessions.
+8. **C++ (9 Nov) and Rocq (12 Nov) code cells**, built like TLA+ and Lean (§4b–4d).
+9. **Upstream merge** (15 Nov 2026): amosblomqvist/learnharness v0.6.1 merged
+   into the fork (plugin platform, side questions, themes, …). The phone
+   pairing gate now lives in `apiRequestRefusal` (`src/server/desktop-access.ts`);
+   a paired phone skips upstream's Host allowlist.
+10. **Code cells became a plugin** (15 Nov 2026), owner decisions:
+   - One core plugin `plugins/code-cells` (listed in `core-plugins.json`), four
+     languages, a toggle per language (on when its checker service is set).
+   - Lessons: `lean_exercise`, `tla_exercise`, `cpp_exercise`, `rocq_exercise`
+     as plugin question types; the tutor picks `predict`/`check` like any question.
+     Practice: `lean_problem`, `tla_problem`, `cpp_problem`, `rocq_problem`.
+   - The reference is checked before posing via the plugin tool
+     `code_cell_verify` (hash cache); the pose is refused otherwise.
+   - **No plan-topic gating any more** (`plan_init.codeCells` is gone); "not two
+     code cells in a row unless learnerAsked" stays.
+   - TLA+/C++ reviews via `code_cell_review` (stored by the plugin).
+   - Old sessions' built-in code-cell records just show the host's generic view.
 
 ## 3. The "This operation was aborted" problem (solved 1 Nov 2026)
 
@@ -115,7 +132,41 @@ Still open (offered, not approved): Lean exercise cells appear before the
 reference proof passes; a failed `lean_exercise` counts toward "not two in a
 row"; code cells stay on when Lean is down; a confirmation for Stop.
 
-## 4. Code cells: how it works (file map)
+## 4. Code cells now: the `code-cells` plugin (15 Nov 2026)
+
+Everything below §4 that names host files (`src/core/*-cell.ts`,
+`src/server/*-answer.ts`, `src/agent/tools/{lean,tla,cpp,rocq}.ts`,
+`components/{lean,tla,cpp,rocq}/`, `app/api/{lean,tla,cpp,rocq}/`) is
+**history**: those files moved into `plugins/code-cells/` or were deleted.
+The checker services in `deploy/` are unchanged.
+
+- `src/contract.ts`: languages, payload schemas (shared by question and
+  problem), tool names, model-facing descriptions and instructions.
+- `src/backend.ts`: registers per enabled language a question type and a
+  problem type (grading = the checker), `code_cell_verify` (teacher +
+  practice), `code_cell_review` (teacher; TLA+/C++), and call handlers
+  `get-settings`, `set-language`, `live-check` (TLA+/C++ editor checks; the
+  exercise is read from the saved session), `review`.
+- `src/server/`: `grade.ts` (authoring problems, reference check, grading,
+  live checks), `*-service.ts` (HTTP checkers from `LH_*_URL`), `session.ts`
+  (reads saved sessions: previous question/problem, newest answered cell,
+  saved payloads), `store.ts` (settings.json, verified.json, reviews.json in
+  the plugin data directory).
+- `src/core/`: the former pure cell modules, unchanged.
+- Frontend: `src/main.tsx` (small entry: renderers + settings rows) loads
+  `src/ui/mount.tsx` on first use (bundled React + CodeMirror); the cells are
+  the former components (`src/ui/*-cell.tsx`, `*-lsp.ts`, verdict views),
+  `src/ui/views.tsx` (editor wrapper, answered/submitted body, chip). Tailwind
+  classes in the plugin's TSX are compiled by the host's build (Tailwind scans
+  the repo), so this works for the core plugin, not as a community download.
+- Caddy's LSP `forward_auth` now uses `GET /api/themes` (any API route is
+  paired-only).
+- Tests: `cd plugins/code-cells && npm test` (cell logic with fixtures in
+  `tests/fixtures`, backend contract in `tests/backend.test.ts`).
+- Lost in the port (owner accepted): the phone one-line fold of the task text
+  while editing (the host owns that area); the old e2e QA scripts.
+
+## 4-old. Code cells before the plugin (history)
 
 - **Lean service** `deploy/lean/`: `Dockerfile` (Node 24 + elan, Lean
   `v4.35.0`, Mathlib `v4.35.0` via `project/lakefile.toml`, `lake exe cache get`,
@@ -272,5 +323,5 @@ in a row" rule.
   (the lint config enforces barrels: browser code imports only `@/src/core`,
   `app/` only `@/src/core` and `@/src/server`).
 - E2E with the scripted model: `npx next build && node tests/e2e/learning-flow.e2e.mjs`.
-  Lean QA: run a Lean container, then `LH_LEAN_URL=http://127.0.0.1:3301 node tests/e2e/lean-qa.e2e.mjs`.
+  Code cells: `cd plugins/code-cells && npm test`; a checker container + `LH_LEAN_URL=…` (etc.) for a real run.
 - The Next.js version here differs from older docs; read `node_modules/next/dist/docs/` before Next-specific changes (see `AGENTS.md`).

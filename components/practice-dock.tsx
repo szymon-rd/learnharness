@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import type { ViewReaderRef } from "./session-view-readers";
 import { ChevronRightIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
@@ -8,23 +9,11 @@ import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { useIsPhone } from "@/components/phone-layout";
 import { ThinkingChip } from "@/components/thinking-chip";
+import { useOptionalInteractionLayers } from "./interaction-layers";
+import { isInteractionScopeEligible } from "./plugin-input-focus";
+import { PathInput } from "@/components/path-input";
+import type { PrepareThinkingSubmission } from "./plugin-submission-adapters";
 import { cn } from "@/lib/utils";
-import { LeanCell, type LeanCellStatus } from "@/components/lean/lean-cell";
-import { parseLeanExerciseInput, TaskFold } from "@/components/lean/lean-dock";
-import { cppExerciseFromInput, resolveLeanExercise, resolveRocqExercise, tlaExerciseFromInput } from "@/src/core";
-import { TlaCell, type TlaCellStatus } from "@/components/tla/tla-cell";
-import { CppCell, type CppCellStatus } from "@/components/cpp/cpp-cell";
-import { RocqCell, type RocqCellStatus } from "@/components/rocq/rocq-cell";
-import { parseRocqExerciseInput } from "@/components/rocq/rocq-dock";
-
-/** What a code problem's submission carries besides the thinking: the
- *  Lean proof or the TLA+ solution (the server adds the verdict). */
-export interface PracticeCodeSubmission {
-	proof?: string;
-	solution?: string;
-	cppSolution?: string;
-	rocqProof?: string;
-}
 
 /**
  * The practice dock (practice sessions, owner design 2026-10-04): an
@@ -47,19 +36,28 @@ export interface PracticeCodeSubmission {
  */
 
 export interface PracticeDockProps {
+	viewReader?: ViewReaderRef<string>;
 	/** The active problem's tool-call id (submissions target it). */
 	problemCallId: string;
 	/** The pose's arguments — only the statement is the learner's (the
 	 *  mode badge would edge toward announcing the target; dropped). */
-	input: { statement: string; lean?: unknown; tla?: unknown; cpp?: unknown; rocq?: unknown };
-	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
-	chatId?: string;
+	input: { statement: string };
 	/** Collapse state, owned by the DockOverlay. */
 	expanded: boolean;
 	onExpand: () => void;
-	/** text — POST {type:"thinking"} (one lane; the register is read from the
-	 *  text). A Lean problem also sends the proof, a TLA+ problem the solution. */
-	onSubmit: (text: string, code?: PracticeCodeSubmission) => void;
+	/** text — POST {type:"thinking"} (one lane; the register is read from the text). */
+	onSubmit: (text: string) => void;
+	onPrepareSubmission?: PrepareThinkingSubmission;
+	/** Host-owned alternative editor. The native statement/thinking/controls stay shared. */
+	customInput?: {
+		editor: ReactNode;
+		thinking: string;
+		onThinkingChange(value: string): void;
+		ready: boolean;
+		prepare: PrepareThinkingSubmission;
+	};
+	hasPendingInput?: boolean;
+	preparing?: boolean;
 	/** Escape in the thinking field stops dictation (threaded from the page). */
 	onEscape?: () => void;
 	/** Compaction is running for this chat (owner round 14): the thinking
@@ -69,54 +67,35 @@ export interface PracticeDockProps {
 	compactionRunning?: boolean;
 }
 
-export function PracticeDock({ problemCallId, chatId = "", input, expanded, onExpand, onSubmit, onEscape, compactionRunning = false }: PracticeDockProps) {
-	const [thinking, setThinking] = useState("");
+export function PracticeDock({ viewReader, problemCallId, input, expanded, onExpand, onSubmit, onPrepareSubmission, customInput, hasPendingInput = false, preparing = false, onEscape, compactionRunning = false }: PracticeDockProps) {
+	const controller = useOptionalInteractionLayers();
+	const rootRef = useRef<HTMLElement>(null);
+	const [nativeThinking, setNativeThinking] = useState("");
+	const custom = useRef(customInput); custom.current = customInput;
+	const thinking = customInput ? customInput.thinking : nativeThinking;
+	const setThinking = (value: string) => { if (custom.current) custom.current.onThinkingChange(value); else setNativeThinking(value); };
 	// Ref MIRRORS the field ("nothing gets lost", the question-dock
 	// discipline): a submit resuming after `await finishDictation()` reads
 	// the tail, never a stale closure.
-	const thinkingRef = useRef("");
-	// A Lean problem (owner, 2026-10-30): the statement's Lean cell; every
-	// submission sends the current proof, and the server checks it.
-	const lean = useMemo(() => {
-		const raw = input.lean as { statement?: unknown } | undefined;
-		const parsed = raw ? parseLeanExerciseInput({ question: input.statement, ...raw }) : null;
-		return parsed ? resolveLeanExercise(parsed) : null;
-	}, [input.lean, input.statement]);
-	const proofRef = useRef(lean?.starter ?? "");
-	const [leanStatus, setLeanStatus] = useState<LeanCellStatus>("connecting");
-	// A TLA+ problem (owner, 2026-11-05): the TLA+ cell; every submission
-	// sends the current solution, and the server checks it with TLC.
-	const tla = useMemo(() => (lean || !input.tla ? null : tlaExerciseFromInput(input.tla, input.statement)), [lean, input.tla, input.statement]);
-	const solutionRef = useRef(tla?.starter ?? "");
-	const [tlaStatus, setTlaStatus] = useState<TlaCellStatus>("parsing");
-	// A C++ problem (owner, 2026-11-09): the C++ cell; every submission runs every test.
-	const cpp = useMemo(() => (lean || tla || !input.cpp ? null : cppExerciseFromInput(input.cpp, input.statement)), [lean, tla, input.cpp, input.statement]);
-	const cppSolutionRef = useRef(cpp?.starter ?? "");
-	const [cppStatus, setCppStatus] = useState<CppCellStatus>("compiling");
-	// A Rocq problem (owner, 2026-11-12): the Rocq cell, like Lean's.
-	const rocq = useMemo(() => {
-		if (lean || tla || cpp || !input.rocq) return null;
-		const parsed = parseRocqExerciseInput({ question: input.statement, ...(input.rocq as object) });
-		return parsed ? resolveRocqExercise(parsed) : null;
-	}, [lean, tla, cpp, input.rocq, input.statement]);
-	const rocqProofRef = useRef(rocq?.starter ?? "");
-	const [rocqStatus, setRocqStatus] = useState<RocqCellStatus>("connecting");
-	const code = lean !== null || tla !== null || cpp !== null || rocq !== null;
+	const thinkingRef = useRef(thinking); thinkingRef.current = thinking;
+	const editRevision = useRef(0);
+	useLayoutEffect(() => {
+		if (!viewReader) return;
+		const read = () => thinkingRef.current;
+		viewReader.current = read;
+		return () => { if (viewReader.current === read) viewReader.current = null; };
+	}, [viewReader]);
 	// Phones (owner, 2026-11-01): "Your thinking" starts as a chip beside
 	// Submit; dictation fills it unseen, a tap expands it.
 	const phone = useIsPhone();
 	const [thinkingOpen, setThinkingOpen] = useState(false);
 	const showThinking = !phone || thinkingOpen;
-	// Phones, while typing in a Lean cell: the statement folds to one line and
-	// the cell hides its `import` lines (owner, 2026-11-01).
-	const [editing, setEditing] = useState(false);
-	const fold = phone && editing && code;
 
 	useDictationTarget(
 		useCallback(
 			(t: string) => {
 				const v = joinDictation(thinkingRef.current, t);
-				thinkingRef.current = v;
+				thinkingRef.current = v; editRevision.current++;
 				setThinking(v);
 			},
 			[],
@@ -124,29 +103,35 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 		true,
 	);
 
+	useLayoutEffect(() => { viewReader?.changed?.(); }, [viewReader, thinking]);
 	const submit = () => {
-		if (compactionRunning) return;
+		if (compactionRunning || preparing) return;
+		const prepare = customInput?.prepare ?? onPrepareSubmission;
+		if (prepare) {
+			if (customInput ? !customInput.ready : (!thinkingRef.current.trim() && !hasPendingInput)) return;
+			let capturedRevision = editRevision.current;
+			prepare(() => { capturedRevision = editRevision.current; return customInput ? thinkingRef.current : thinkingRef.current.trim(); }, captured => {
+				if (editRevision.current === capturedRevision && (customInput ? thinkingRef.current : thinkingRef.current.trim()) === captured) { thinkingRef.current = ""; setThinking(""); }
+			});
+			return;
+		}
 		const text = thinkingRef.current.trim();
-		if (text.length === 0 && !code) return;
+		if (text.length === 0) return;
 		thinkingRef.current = "";
 		setThinking("");
-		if (lean) onSubmit(text, { proof: proofRef.current });
-		else if (tla) onSubmit(text, { solution: solutionRef.current });
-		else if (cpp) onSubmit(text, { cppSolution: cppSolutionRef.current });
-		else if (rocq) onSubmit(text, { rocqProof: rocqProofRef.current });
-		else onSubmit(text);
+		onSubmit(text);
 	};
 
 	/* ENTER SUBMITS FROM ANYWHERE (owner round 6, 2026-10-05): dictation
 	 * means the field is often never focused — the window-level Enter
 	 * (typing surfaces and buttons excluded) submits the trace. Mounted
 	 * while the dock is — collapsed bar included (the trace survives). */
-	useEnterSubmits(submit);
+	useEnterSubmits(submit, rootRef);
 
 	/* ── the collapsed bar ── */
-	if (!expanded) {
-		return (
+	const bar = (
 			<button
+				ref={element => { if (!customInput) rootRef.current = element; }}
 				type="button"
 				data-testid="practice-dock-bar"
 				onClick={onExpand}
@@ -157,95 +142,25 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 				<span className="min-w-0 flex-1 truncate">{input.statement}</span>
 			</button>
 		);
-	}
+	if (!expanded && !customInput) return bar;
 
 	/* ── the expanded form ── */
 	return (
-		<div data-testid="practice-dock" data-problem={problemCallId}>
+		<div ref={element => { rootRef.current = element; }} data-testid="practice-dock" data-problem={problemCallId}>
+			{!expanded && bar}
+			<div hidden={!expanded}>
 			{/* The agent's half: the 'Problem' eyebrow (mirroring the quiz
 			    cards' label row — owner round, 2026-10-05) + the statement,
 			    markdown + LaTeX rendered, capped by the measured column
 			    (--dock-max-h; the old fixed 40vh cut long problems short). */}
 			<div data-dock-scroll-area="" className="max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2">
-				{fold ? (
-					<TaskFold text={input.statement} label="Problem" />
-				) : (
-					<>
-						<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
-						<div className="lh-prose text-[15px]">
-							<ToolContentResponse>{input.statement}</ToolContentResponse>
-						</div>
-					</>
-				)}
-				{lean && (
-					<div className={fold ? undefined : "mt-3"}>
-						<LeanCell
-							exercise={lean}
-							cellId={problemCallId}
-							initialProof={proofRef.current}
-							onProofChange={(p) => {
-								proofRef.current = p;
-							}}
-							onStatus={setLeanStatus}
-							onEditingChange={setEditing}
-							hidePrelude={fold}
-						/>
-					</div>
-				)}
-				{tla && (
-					<div className={fold ? undefined : "mt-3"}>
-						<TlaCell
-							exercise={tla}
-							chatId={chatId}
-							toolCallId={problemCallId}
-							// The dock unmounts the cell while collapsed: restore the
-							// learner's last text, not the starter.
-							initialSolution={solutionRef.current}
-							onSolutionChange={(s) => {
-								solutionRef.current = s;
-							}}
-							onStatus={setTlaStatus}
-							onEditingChange={setEditing}
-							foldHead={fold}
-						/>
-					</div>
-				)}
-				{rocq && (
-					<div className={fold ? undefined : "mt-3"}>
-						<RocqCell
-							exercise={rocq}
-							cellId={problemCallId}
-							// The dock unmounts the cell while collapsed: restore the
-							// learner's last proof, not the starter.
-							initialProof={rocqProofRef.current}
-							onProofChange={(p) => {
-								rocqProofRef.current = p;
-							}}
-							onStatus={setRocqStatus}
-							onEditingChange={setEditing}
-							hidePrelude={fold}
-						/>
-					</div>
-				)}
-				{cpp && (
-					<div className={fold ? undefined : "mt-3"}>
-						<CppCell
-							exercise={cpp}
-							chatId={chatId}
-							toolCallId={problemCallId}
-							// The dock unmounts the cell while collapsed: restore the
-							// learner's last text, not the starter.
-							initialSolution={cppSolutionRef.current}
-							onSolutionChange={(s) => {
-								cppSolutionRef.current = s;
-							}}
-							onStatus={setCppStatus}
-							onEditingChange={setEditing}
-							foldHead={fold}
-						/>
-					</div>
-				)}
+				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
+				<div className="lh-prose text-[15px]">
+					<ToolContentResponse>{input.statement}</ToolContentResponse>
+				</div>
 			</div>
+
+			{customInput?.editor}
 
 			{/* The learner's half: Enter SENDS (owner round 2, 2026-10-05);
 			    Shift+Enter makes a newline — less to decide about. */}
@@ -264,17 +179,19 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 				</div>
 				)}
 				{showThinking && (
-				<textarea
+				<PathInput
 					value={thinking}
 					autoFocus={phone}
-					onChange={(e) => {
-						thinkingRef.current = e.target.value;
-						setThinking(e.target.value);
+					onValueChange={(value) => {
+						thinkingRef.current = value; editRevision.current++;
+						setThinking(value);
 					}}
 					onKeyDown={(e) => {
+						if (!isInteractionScopeEligible(e.currentTarget, controller)) return;
 						// Esc ends dictation — stopPropagation claims it (the
 						// keyboard machine) so the window chain doesn't also fire.
 						if (e.key === "Escape" && onEscape) {
+							controller?.claimEscape(e);
 							e.preventDefault();
 							e.stopPropagation();
 							onEscape();
@@ -289,7 +206,6 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 					}}
 					placeholder="Work here, think out loud."
 					enterKeyHint="send"
-					rows={4}
 					className={cn(
 						"field-sizing-content lh-input max-h-64 min-h-16 w-full resize-none bg-transparent px-2.5 pb-2 outline-none placeholder:text-muted-foreground",
 					)}
@@ -305,39 +221,20 @@ export function PracticeDock({ problemCallId, chatId = "", input, expanded, onEx
 					) : (
 					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
 						{/* Touch keyboards have no ⇧↵ chord — the hint is keyboard-only. */}
-						{compactionRunning ? (
-							"compacting session…"
-						) : lean ? (
-							<span className={cn(leanStatus === "passes" && "text-emerald-700 dark:text-emerald-400")}>
-								{leanStatus === "passes" ? "Lean accepts this proof." : "Submit sends your proof and thinking."}
-							</span>
-						) : rocq ? (
-							<span className={cn(rocqStatus === "passes" && "text-emerald-700 dark:text-emerald-400")}>
-								{rocqStatus === "passes" ? "Rocq accepts this proof." : "Submit sends your proof and thinking."}
-							</span>
-						) : cpp ? (
-							<span className={cn(cppStatus === "compiles" && "text-emerald-700 dark:text-emerald-400")}>
-								{cppStatus === "compiles" ? "It compiles. Check runs the shown tests." : "Submit sends your code and thinking."}
-							</span>
-						) : tla ? (
-							<span className={cn(tlaStatus === "parses" && "text-emerald-700 dark:text-emerald-400")}>
-								{tlaStatus === "parses" ? "The module parses. Check runs TLC." : "Submit sends your solution and thinking."}
-							</span>
-						) : (
-							<span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>
-						)}
+						{compactionRunning ? "compacting session…" : <span className="pointer-coarse:hidden">↵ submits · ⇧↵ newline</span>}
 					</span>
 					)}
 					<Button
 						type="button"
 						data-testid="practice-send"
-						disabled={(thinking.trim().length === 0 && !code) || compactionRunning}
+						disabled={(customInput ? !customInput.ready : (!thinking.trim() && !hasPendingInput)) || compactionRunning || preparing}
 						onClick={() => submit()}
 						className="ml-auto h-9 shrink-0 rounded-[6px] px-3.5 text-sm font-medium"
 					>
-						{code ? "Submit" : "Submit thinking"}
+						{customInput ? "Submit" : "Submit thinking"}
 					</Button>
 				</div>
+			</div>
 			</div>
 		</div>
 	);

@@ -1,17 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { ViewReaderRef, NativeQuestionViewState } from "./session-view-readers";
 import { ArrowDownIcon, ChevronRightIcon, PlayIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
 import { useIsPhone } from "@/components/phone-layout";
 import { ThinkingChip } from "@/components/thinking-chip";
 import { useEnterSubmits } from "@/components/enter-submits";
+import { useOptionalInteractionLayers } from "./interaction-layers";
+import { isInteractionScopeEligible } from "./plugin-input-focus";
+import { PathInput } from "@/components/path-input";
+import { MalformedQuestion } from "@/components/malformed-question";
 import { ToolContentResponse } from "@/components/ai-elements/message";
+import { QuestionPreview } from "@/components/question-preview";
 import { cn } from "@/lib/utils";
 import {
 	buildAnswer,
-	repairMathForDisplay,
+	toClientQuestion,
 	normalizeQuizType,
 	CONFIDENCE_STOPS,
 	DEFAULT_CONFIDENCE_INDEX,
@@ -38,11 +44,8 @@ import {
 	type SelectMode,
 	type Phase3,
 } from "@/src/core";
+import type { PrepareBuiltinSubmission } from "./plugin-submission-adapters";
 import { CONFIDENCE_COLORS, confidenceRailStyle } from "@/components/confidence-rail";
-import { LeanDockForm, parseLeanExerciseInput } from "@/components/lean/lean-dock";
-import { parseTlaExerciseInput, TlaDockForm } from "@/components/tla/tla-dock";
-import { CppDockForm, parseCppExerciseInput } from "@/components/cpp/cpp-dock";
-import { parseRocqExerciseInput, RocqDockForm } from "@/components/rocq/rocq-dock";
 
 /**
  * The question dock — a pending quiz/ask REPLACES the chat composer: the
@@ -65,10 +68,10 @@ import { parseRocqExerciseInput, RocqDockForm } from "@/components/rocq/rocq-doc
  */
 
 export interface QuestionDockProps {
-	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall" | "lean_exercise" | "tla_exercise" | "cpp_exercise" | "rocq_exercise";
+	/** Private click-time view read: no draft save or dictation flush. */
+	viewReader?: ViewReaderRef<NativeQuestionViewState>;
+	toolName: "quiz" | "probe" | "ask_user_question" | "explain" | "recall";
 	toolCallId: string;
-	/** The chat (a TLA+ cell's live parse and Check read the persisted call). */
-	chatId?: string;
 	input: QuizToolInput | AskToolInput | ExplainToolInput;
 	/** Collapse state, owned by the DockOverlay (it drives the shell's height morph). */
 	expanded: boolean;
@@ -81,12 +84,18 @@ export interface QuestionDockProps {
 	reveal?: boolean;
 	onExpand: () => void;
 	onSubmit: (output: QuestionAnswerData) => void;
+	onPrepareSubmission?: PrepareBuiltinSubmission;
+	hasPendingInput?: (question: QuestionData) => boolean;
+	preparing?: boolean;
 	/** Restore only this call's unconfirmed submission after recovery. */
 	initialDraft?: QuestionFormDraft;
 	onSaveDraft?: (draft: QuestionFormDraft) => void;
 	/** Escape in a question field stops dictation (STT wave) — threaded
 	 *  from the page that owns the dictation hook. */
 	onEscape?: () => void;
+	/** The learner's current unsubmitted working (thinking, or the typed
+	 *  answer in text mode), kept current for the side thread's nudges. */
+	workingRef?: { current: string };
 	/** The keyboard machine (wave B) is armed only while the dock is
 	 *  expanded — the collapsed bar keeps its native Enter-to-expand. */
 	active?: boolean;
@@ -106,20 +115,24 @@ export interface QuestionDockProps {
 }
 
 export function QuestionDock({
+	viewReader,
 	toolName,
 	toolCallId,
-	chatId = "",
 	input,
 	expanded,
 	reveal = false,
 	onExpand,
 	onSubmit,
+	onPrepareSubmission,
+	hasPendingInput,
+	preparing,
 	initialDraft,
 	onSaveDraft,
 	onEscape,
 	phase = "probe",
 	dictationClaim = true,
 	compactionRunning = false,
+	workingRef,
 }: QuestionDockProps) {
 	// The probe-phase names (owner, 2026-10-09) canonicalize onto their
 	// teach twins for every dock concern — parse dispatch, labels, kinds:
@@ -131,135 +144,16 @@ export function QuestionDock({
 	// 2026-10-09): probe-phase questions label Probe/Recall in the
 	// composer; teach tools keep the standing labels.
 	const toolLabel = toolName === "probe" ? "Probe" : toolName === "recall" ? "Recall" : undefined;
-	// Lean code cells (owner, 2026-10-30): their own form — the cell, live
-	// Lean, thinking, Submit. Same bar and collapse behavior as the rest.
-	if (toolName === "lean_exercise") {
-		const lean = parseLeanExerciseInput(input);
-		if (!lean) {
-			return (
-				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-					This exercise arrived malformed — the transcript keeps the retry.
-				</div>
-			);
-		}
-		return (
-			<>
-				{!expanded && <QuestionDockBar toolName="lean_exercise" question={lean.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="Lean" />}
-				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
-					<LeanDockForm
-						toolCallId={toolCallId}
-						input={lean}
-						onSubmit={onSubmit}
-						initialDraft={initialDraft}
-						onSaveDraft={onSaveDraft}
-						onEscape={onEscape}
-						dictationClaim={dictationClaim}
-						compactionRunning={compactionRunning}
-					/>
-				</div>
-			</>
-		);
-	}
-	// TLA+ code cells (owner, 2026-11-05): the same shape with the TLA+ cell.
-	if (toolName === "tla_exercise") {
-		const tla = parseTlaExerciseInput(input);
-		if (!tla) {
-			return (
-				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-					This exercise arrived malformed — the transcript keeps the retry.
-				</div>
-			);
-		}
-		return (
-			<>
-				{!expanded && <QuestionDockBar toolName="tla_exercise" question={tla.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="TLA+" />}
-				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
-					<TlaDockForm
-						chatId={chatId}
-						toolCallId={toolCallId}
-						exercise={tla}
-						onSubmit={onSubmit}
-						initialDraft={initialDraft}
-						onSaveDraft={onSaveDraft}
-						onEscape={onEscape}
-						dictationClaim={dictationClaim}
-						compactionRunning={compactionRunning}
-					/>
-				</div>
-			</>
-		);
-	}
-	// Rocq code cells (owner, 2026-11-12): like Lean's.
-	if (toolName === "rocq_exercise") {
-		const rocq = parseRocqExerciseInput(input);
-		if (!rocq) {
-			return (
-				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-					This exercise arrived malformed — the transcript keeps the retry.
-				</div>
-			);
-		}
-		return (
-			<>
-				{!expanded && <QuestionDockBar toolName="rocq_exercise" question={rocq.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="Rocq" />}
-				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
-					<RocqDockForm
-						toolCallId={toolCallId}
-						input={rocq}
-						onSubmit={onSubmit}
-						initialDraft={initialDraft}
-						onSaveDraft={onSaveDraft}
-						onEscape={onEscape}
-						dictationClaim={dictationClaim}
-						compactionRunning={compactionRunning}
-					/>
-				</div>
-			</>
-		);
-	}
-	// C++ code cells (owner, 2026-11-09): the same shape with the C++ cell.
-	if (toolName === "cpp_exercise") {
-		const cpp = parseCppExerciseInput(input);
-		if (!cpp) {
-			return (
-				<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-					This exercise arrived malformed — the transcript keeps the retry.
-				</div>
-			);
-		}
-		return (
-			<>
-				{!expanded && <QuestionDockBar toolName="cpp_exercise" question={cpp.question} onExpand={onExpand} variant={reveal ? "reveal" : "collapsed"} toolLabel="C++" />}
-				<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
-					<CppDockForm
-						chatId={chatId}
-						toolCallId={toolCallId}
-						exercise={cpp}
-						onSubmit={onSubmit}
-						initialDraft={initialDraft}
-						onSaveDraft={onSaveDraft}
-						onEscape={onEscape}
-						dictationClaim={dictationClaim}
-						compactionRunning={compactionRunning}
-					/>
-				</div>
-			</>
-		);
-	}
 	// Parse, don't cast (src/core/tool-parts.ts): the model authored this
 	// input, and only the schema the tool declared vouches for its shape.
 	// The dock mounts on input-available parts (already validated at the
 	// bridge), so this is pure defense in depth — but it is STRUCTURAL now:
 	// anything that slips through renders the quiet fallback, never a
 	// crash on `.map` over model-authored bytes.
-	const parsed =
-		canonical === "quiz" ? parseQuizInput(input) : canonical === "explain" ? parseExplainInput(input) : parseAskInput(input);
+	const parsed = useMemo(() =>
+		canonical === "quiz" ? parseQuizInput(input) : canonical === "explain" ? parseExplainInput(input) : parseAskInput(input), [canonical, input]);
 	if (!parsed) {
-		return (
-			<div data-testid="malformed-question" className="rounded-xl border border-dashed bg-card/60 p-3 text-sm text-muted-foreground">
-				This question arrived malformed — the transcript keeps the retry.
-			</div>
-		);
+		return <MalformedQuestion />;
 	}
 	return (
 		<>
@@ -280,34 +174,26 @@ export function QuestionDock({
 			)}
 			<div className={expanded ? "dock-variant" : "invisible h-0 overflow-hidden"}>
 				<QuestionDockForm
+					viewReader={viewReader}
 					toolName={toolName}
 					toolCallId={toolCallId}
 					input={parsed}
 					phase={phase}
 					active={expanded}
 					onSubmit={onSubmit}
+					onPrepareSubmission={onPrepareSubmission}
+					hasPendingInput={hasPendingInput}
+					preparing={preparing}
 					initialDraft={initialDraft}
 					onSaveDraft={onSaveDraft}
 					onEscape={onEscape}
+					workingRef={workingRef}
 					dictationClaim={dictationClaim}
 					compactionRunning={compactionRunning}
 				/>
 			</div>
 		</>
 	);
-}
-
-/** A plain-text teaser of a question for the collapsed bar: unwrap math, flatten common LaTeX. */
-function teaserText(q: string): string {
-	return repairMathForDisplay(q)
-		.replace(/\\\(([\s\S]*?)\\\)/g, "$1") // \(...\) inline math
-		.replace(/\\\[([\s\S]*?)\\\]/g, "$1") // \[...\] display math
-		.replace(/\$\$?([^$]*)\$\$?/g, "$1") // standard $...$/$$...$$ math
-		.replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, "$1/$2")
-		.replace(/\\([a-zA-Z]+)/g, "$1")
-		.replace(/[{}]/g, "")
-		.replace(/\s+/g, " ")
-		.trim();
 }
 
 /** The collapsed strip. Two species (W5): "collapsed" is the scroll minimization
@@ -322,7 +208,7 @@ export function QuestionDockBar({
 	label,
 	toolLabel,
 }: {
-	toolName: "quiz" | "ask_user_question" | "explain" | "lean_exercise" | "tla_exercise" | "cpp_exercise" | "rocq_exercise";
+	toolName: "quiz" | "ask_user_question" | "explain";
 	question: string;
 	onExpand: () => void;
 	variant?: "collapsed" | "reveal";
@@ -347,7 +233,9 @@ export function QuestionDockBar({
 				</span>
 				<span className="min-w-0 flex-1">
 					<span className="block text-sm font-medium">Check your understanding</span>
-					<span className="block truncate text-xs text-muted-foreground">{teaserText(question)}</span>
+					<span className="block text-xs text-muted-foreground">
+						<QuestionPreview>{question}</QuestionPreview>
+					</span>
 				</span>
 				<span className="flex shrink-0 items-center gap-1 text-xs font-medium text-primary">
 					Open <ChevronRightIcon className="size-3.5" />
@@ -367,7 +255,9 @@ export function QuestionDockBar({
 							toolLabel ??
 							(toolName === "quiz" ? "Check" : toolName === "explain" ? "Explain" : "Question")}
 			</span>
-			<span className="min-w-0 flex-1 truncate text-muted-foreground">{teaserText(question)}</span>
+			<span className="min-w-0 flex-1 text-muted-foreground">
+				<QuestionPreview>{question}</QuestionPreview>
+			</span>
 			<span className="flex shrink-0 items-center gap-1 text-xs font-medium">
 				Answer <ArrowDownIcon className="size-3.5" />
 			</span>
@@ -377,19 +267,26 @@ export function QuestionDockBar({
 
 /** The expanded question: label, question, options, and the unified bottom row. */
 function QuestionDockForm({
+	viewReader,
 	toolName,
 	toolCallId,
 	input,
 	phase = "probe",
 	active,
 	onSubmit,
+	onPrepareSubmission,
+	hasPendingInput,
+	preparing,
 	initialDraft,
 	onSaveDraft,
 	onEscape,
 	dictationClaim = true,
 	compactionRunning = false,
+	workingRef,
 }: Omit<QuestionDockProps, "expanded" | "onExpand" | "reveal">) {
 	const kind = toolQuestionKind(toolName);
+	const controller = useOptionalInteractionLayers();
+	const rootRef = useRef<HTMLDivElement>(null);
 
 	// Canonical QuestionData, built once per question. Quiz options are
 	// deterministically shuffled (seeded by toolCallId) so position never leaks
@@ -451,6 +348,11 @@ function QuestionDockForm({
 	const [thinking, setThinking] = useState(initialDraft?.thinking ?? "");
 	const [other, setOther] = useState(initialDraft?.other ?? "");
 	const [text, setText] = useState(initialDraft?.text ?? "");
+	// Mirrors the working out for the side thread (nudges respond to it).
+	useEffect(() => {
+		if (workingRef) workingRef.current = (qd.mode === "text" ? text : thinking).trim();
+	}, [workingRef, qd.mode, text, thinking]);
+	useEffect(() => () => { if (workingRef) workingRef.current = ""; }, [workingRef]);
 	/* Refs MIRROR the two dictation-target fields ("nothing gets lost"
 	 * round, owner 2026-10-01): the run's flush lands via setState, which
 	 * a closure waiting through `await finishDictation()` cannot observe
@@ -494,13 +396,36 @@ function QuestionDockForm({
 
 	const toggle = (idx: number) => setSel(toggleOption(selectMode, sel, idx));
 
-	const canSubmit =
+	const nativeCanSubmit =
 		qd.mode === "text"
 			? text.trim().length > 0
 			: sel.dontKnow || (sel.otherSelected && other.trim().length > 0) || sel.selected.size > 0;
 
+	const canSubmit = nativeCanSubmit || hasPendingInput?.(qd) === true;
+	const currentQuestion = useRef(qd); currentQuestion.current = qd;
+	const mounted = useRef(true);
+	useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+	const formValues = useRef({ sel, other, confIdx }); formValues.current = { sel, other, confIdx };
+	useLayoutEffect(() => {
+		if (!viewReader) return;
+		const read = (): NativeQuestionViewState => {
+			const { sel, other, confIdx } = formValues.current;
+			return { question: qd, draft: { dontKnow: sel.dontKnow,
+				values: [...sel.selected].flatMap(index => qd.options[index] ? [qd.options[index]!.value] : []),
+				otherSelected: sel.otherSelected, other, text: answerTextRef.current, thinking: thinkingTextRef.current,
+				...(kind === "quiz" ? { confidence: CONFIDENCE_STOPS[confIdx] } : {}) } };
+		};
+		viewReader.current = read;
+		return () => { if (viewReader.current === read) viewReader.current = null; };
+	}, [viewReader, qd, kind]);
+	const viewPresentationKey = JSON.stringify({ ...toClientQuestion(qd), questionType: qd.questionType });
+	useLayoutEffect(() => { viewReader?.changed?.(); }, [viewReader, sel, other, text, thinking, confIdx, viewPresentationKey]);
 	const submit = () => {
-		if (!canSubmit || compactionRunning) return;
+		if (!canSubmit || compactionRunning || preparing) return;
+		if (onPrepareSubmission) {
+			onPrepareSubmission({ question: qd, isCurrent: () => mounted.current && currentQuestion.current === qd && isInteractionScopeEligible(rootRef.current, controller), capture: captureRequest });
+			return;
+		}
 		/* FINISH DICTATION FIRST (owner, 2026-10-01): Enter may arrive while
 		 * a run is live with reasoning still in Deepgram's hands. Stop the
 		 * run, let the last finals land in the target field, and only then
@@ -513,8 +438,8 @@ function QuestionDockForm({
 		}
 		void finishDictation().then(doSubmit);
 	};
-	const doSubmit = () => {
-		if (!canSubmit) return;
+	const captureRequest = (): AnswerRequest => {
+		const { sel, other, confIdx } = formValues.current;
 		const req: AnswerRequest = {
 			dontKnow: sel.dontKnow,
 			values: [...sel.selected].map((i) => qd.options[i]!.value),
@@ -534,13 +459,17 @@ function QuestionDockForm({
 			text: answerTextRef.current,
 			confidenceIndex: confIdx,
 		});
-		onSubmit(buildAnswer(qd, req, toolName));
+		return req;
+	};
+	const doSubmit = () => {
+		if (!canSubmit) return;
+		onSubmit(buildAnswer(qd, captureRequest(), toolName));
 	};
 
 	/* ENTER SUBMITS FROM ANYWHERE (owner round 6, 2026-10-05): the same
 	 * law as the practice dock — dictated answers rarely focus the field.
 	 * Rides submit() so the dictation-flush law is shared, not forked. */
-	useEnterSubmits(submit);
+	useEnterSubmits(submit, rootRef);
 
 	// Selecting Other never clears the thinking field — two channels, the
 	// answer and the reasoning behind it, side by side.
@@ -562,9 +491,8 @@ function QuestionDockForm({
 	   The listener is document-level and lives only while the dock is
 	   expanded — collapsed, the bar's native Enter expands it. */
 	const [kbdIdx, setKbdIdx] = useState<number | null>(null);
-	const rootRef = useRef<HTMLDivElement>(null);
-	const otherInputRef = useRef<HTMLInputElement>(null);
-	const thinkingRef = useRef<HTMLTextAreaElement>(null);
+	const otherInputRef = useRef<HTMLDivElement>(null);
+	const thinkingRef = useRef<HTMLDivElement>(null);
 	// Phones (owner, 2026-11-01): "Your thinking" starts as a chip beside
 	// Submit; dictation fills it unseen, a tap expands it.
 	const phone = useIsPhone();
@@ -602,13 +530,16 @@ function QuestionDockForm({
 	const focusRow = (idx: number) => {
 		const row = rootRef.current?.querySelector(`[data-kbdrow="${idx}"]`) as HTMLElement | null;
 		if (!row) return;
-		const el = (row.querySelector("input") as HTMLElement | null) ?? row;
+		const el = (row.querySelector("input, [data-file-path-input]") as HTMLElement | null) ?? row;
 		el.focus();
 	};
 
 	useEffect(() => {
 		if (!active || rowCount === 0) return;
 		const onKeyDown = (e: KeyboardEvent) => {
+			// Tab is already default-prevented by provider capture; do not
+			// treat that as a claim. Eligibility, not focus alone, owns rows.
+			if (!isInteractionScopeEligible(rootRef.current, controller)) return;
 			const t = e.target as HTMLElement | null;
 			// A TYPING field is where keys mean text (owner round 4): the
 			// thinking/answer fields, search boxes, renames — never a range
@@ -825,16 +756,18 @@ function QuestionDockForm({
 										</span>
 									)}
 								</span>
-								<input
+								<PathInput
 									ref={otherInputRef}
+									singleLine
 									value={other}
-									onChange={(e) => {
-										setOther(e.target.value);
+									onValueChange={(value) => {
+										setOther(value);
 										// Typing selects the row — displacing in
 										// single-select, alongside the siblings in multi.
 										setSel((prev) => (prev.otherSelected ? prev : toggleOther(selectMode, prev)));
 									}}
 									onKeyDown={(e) => {
+										if (!isInteractionScopeEligible(e.currentTarget, controller)) return;
 										// Esc escapes the typing (owner refinement round,
 										// 2026-09-24): focus leaves the input, the row STAYS
 										// selected — deselection is the next Space's job, acting
@@ -842,6 +775,7 @@ function QuestionDockForm({
 										// row (kbdIdx pins it). stopPropagation keeps the
 										// window chain from reading this Esc as abort-turn.
 										if (e.key === "Escape") {
+											controller?.claimEscape(e);
 											e.preventDefault();
 											e.stopPropagation();
 											e.currentTarget.blur();
@@ -992,19 +926,21 @@ function QuestionDockForm({
 						</div>
 					)}
 					{qd.mode === "text" ? (
-						<textarea
+						<PathInput
 							value={text}
-							onChange={(e) => {
-								answerTextRef.current = e.target.value;
-								setText(e.target.value);
+							onValueChange={(value) => {
+								answerTextRef.current = value;
+								setText(value);
 							}}
 							onKeyDown={(e) => {
+								if (!isInteractionScopeEligible(e.currentTarget, controller)) return;
 								// Esc ends dictation (the dictate decisions: click-again
 								// or Esc) — stopPropagation claims it (keyboard wave
 								// A) so the window chain doesn't also abort a turn.
 								if (e.key === "Escape" && onEscape) {
 									e.preventDefault();
 									e.stopPropagation();
+									controller?.claimEscape(e);
 									onEscape();
 									return;
 								}
@@ -1017,25 +953,26 @@ function QuestionDockForm({
 							}}
 							placeholder="Type your answer…"
 							enterKeyHint="send"
-							rows={1}
 							className="field-sizing-content lh-input max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground"
 						/>
 					) : !showThinking ? null : (
-						<textarea
+						<PathInput
 							ref={thinkingRef}
 							autoFocus={phone}
 							value={thinking}
-							onChange={(e) => {
-								thinkingTextRef.current = e.target.value;
-								setThinking(e.target.value);
+							onValueChange={(value) => {
+								thinkingTextRef.current = value;
+								setThinking(value);
 							}}
 							onKeyDown={(e) => {
+								if (!isInteractionScopeEligible(e.currentTarget, controller)) return;
 								// Esc ends dictation (the dictate decisions: click-again
 								// or Esc) — stopPropagation claims it (keyboard wave
 								// A) so the window chain doesn't also abort a turn.
 								if (e.key === "Escape" && onEscape) {
 									e.preventDefault();
 									e.stopPropagation();
+									controller?.claimEscape(e);
 									onEscape();
 									return;
 								}
@@ -1049,7 +986,6 @@ function QuestionDockForm({
 							}}
 							placeholder="Why this answer? Whatever comes to mind."
 							enterKeyHint="send"
-							rows={1}
 							className={cn(
 								"field-sizing-content lh-input max-h-48 w-full resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground/70",
 								// Phase-scaled prominence: teaching invites depth,
@@ -1070,7 +1006,7 @@ function QuestionDockForm({
 						)}
 						<Button
 							type="submit"
-							disabled={!canSubmit || compactionRunning}
+							disabled={!canSubmit || compactionRunning || preparing}
 							className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
 						>
 							Submit answer
